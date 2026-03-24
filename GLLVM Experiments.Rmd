@@ -3,7 +3,9 @@ title: "GLLVM Experiments"
 output: html_document
 date: "2026-02-26"
 ---
+#Fitted 4 different models on microbial dataset with averaged pearson residuals and computation, along with their standard deviations.
 
+#Each model was fitted with both 1 latent variable and 2 latent variables separately
 ```{r setup, include=FALSE}
 set.seed(0)
 ```
@@ -23,366 +25,398 @@ Xenv[, 1:3]
 df_noXenv = microbial %>%  #no X variables 
     dplyr::select(-(Xenv.SOM:Xenv.Soiltype))
 ```
+
+
 ```{r running gllvm 1 l.v.}
-system.time({
-  modelg = gllvm(microbial[, 1:200], Xenv[, 1:2], num.lv = 1, family = poisson(link = 'log'))
-}) 
-#4.658s elapsed
+ite = 10
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
 
-predicted_logmu = predict(modelg, type = 'link', lv.pred = TRUE) #account for latent variable
-pred_counts = exp(predicted_logmu)
+for (i in 1:ite){
+  time_i = system.time({
+    glvm1 = gllvm(microbial[, 1:200], Xenv[, 1:2], num.lv = 1, family = poisson(link = 'log'))
+  }) 
 
-pearson_resid = (microbial[, 1:200] - pred_counts)/sqrt(pred_counts) 
-sspearson_resid = sum(pearson_resid^2)
-ds_residuals = residuals(modelg)
+  time[i] = as.numeric(time_i[3])
+  pred_counts = predict(glvm1, type = 'response', lv.pred = TRUE) #account for latent variable
+  
+  pearson_resid = (microbial[, 1:200] - pred_counts)/sqrt(pred_counts) 
+  sspearson_resid[i] = sum(pearson_resid^2)
+}
+#ds_residuals = residuals(glvm1)
+
+time
+sspearson_resid
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
 ```
-
 
 ```{r running gllvm 2 l.v.}
-#model = gllvm(microbialdata[, 1:20], Xenv, family = poisson(link = 'log'))
-#summary(model)
+ite = 10
+time2 = rep(NA, ite)
+sspearson_resid2 = rep(NA, ite)
 
-#model = gllvm(microbialdata[, 1:30], Xenv, family = poisson(link = 'log'))
-#summary(model)
-
-#model = gllvm(microbialdata[, 1:100], Xenv, family = poisson(link = 'log'))
-#summary(model)
-
-system.time({
-  modelg = gllvm(microbial[, 1:200], Xenv[, 1:2], family = poisson(link = 'log'))
+for (i in 1:ite){
+  time_i = system.time({
+  glvm2 = gllvm(microbial[, 1:200], Xenv[, 1:2], num.lv = 2, family = poisson(link = 'log'))
 }) 
-#20.633s elapsed, if done on all columns in response matrix then over 20 mins and R starts not responding
+  
+  time2[i] = as.numeric(time_i[3])
+  pred_counts2 = predict(glvm2, type = 'response', lv.pred = TRUE)
+  
+  pearson_resid2 = (microbial[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
+  sspearson_resid2[i] = sum(pearson_resid2^2)
+}
 
-predicted_logmu = predict(modelg, type = 'link', lv.pred = TRUE) #account for latent variable
-pred_counts = exp(predicted_logmu)
-
-pearson_resid = (microbial[, 1:200] - pred_counts)/sqrt(pred_counts) 
-sspearson_resid = sum(pearson_resid^2)
-ds_residuals = residuals(modelg)
-
-#model = gllvm(microbialdata[, 1:500], Xenv, family = poisson(link = 'log'))
-#summary(model)
-
-#modelg$beta0com
-#beta=as.matrix(modelg$coefficients)
-#unname(beta)
-#beta
+time2
+sspearson_resid2
+c(mean(time2), sqrt(var(time2)))
+c(mean(sspearson_resid2), sqrt(var(sspearson_resid2)))
 ```
-#simulations - take fitted model (known parameters) and simulate 100 times, conditional = TRUE to know u hence mu, then fit various methods, store comp time and KL distance 
+
 ```{r alternating glms using 1 latent variable}
-system.time({u = rnorm(56, 0, 1) # simulating 56 observations for 1 latent variable
+ite = 10
+time3 = rep(NA, ite)
+sspearson_resid3 = rep(NA, ite)
+j_all = rep(NA, ite)
 
-#model = glm(microbial[, 1] ~ Xenv[, 1] + Xenv[, 2] + u - 1, family=poisson(link='log'))
-#beta_lambda = t(model$coefficients)
+for (k in 1:ite){
+  time_i = system.time({u = rnorm(56, 0, 1) # simulating 56 observations for 1 latent variable
 
-#beta = beta_lambda[, 1:2] #1 x 2
-#lambda = beta_lambda[, 1] #1 x 1
-
-#new_Xenv = cbind(Xenv[, 1], Xenv[, 2])
-#model2 = glm(as.numeric(df_noXenv[1, ]) ~ lambda - 1, family=poisson(link='log'), offset = (new_Xenv%*%beta)[1, ])
-
-beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 3) #preset matrix of coefficients including betas and lambdas, nrow = no. of columns in the responses, no. of columns = beta1, beta2, lambda
-
-loglik = -Inf
-for (j in 1:20){
-
-  for (i in 1:length(microbial[, 1:200])){
-    model = glm.fit(y = df_noXenv[, i], x = cbind(Xenv[, 1], Xenv[, 2], u), intercept = FALSE, family=poisson(link='log')) #without interc.
-    beta_lambda[i, ] = t(model$coefficients) #1 x 3
-  }
-  beta_lambda #(intercept beta lambda)
-  beta = beta_lambda[, 1:2] #200 x 2
-  lambda = beta_lambda[, 3] #200 x 1
+  beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 4) #preset matrix of coefficients including betas and lambdas, nrow = no. of columns in the responses, no. of columns = beta0, beta1, beta2, lambda
   
-  new_Xenv = cbind(Xenv[, 1], Xenv[, 2]) #56 x 2
-  new_u = matrix(NA, nrow = nrow(microbial), ncol = 1) #56 x 1
+  N = 20
+  loglik = -Inf
+  for (j in 1:N){
   
-  for (i in 1:nrow(df_noXenv)){
-    model2 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ]) #invalid type without as.numeric
-    new_u[i] = model2$coefficients 
-  }
-  u = new_u #56 x 1
-  u
-  eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-  mu = exp(eta)
-  loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
-  if(abs(loglik_new - loglik) < 1e-3) break
-  loglik = loglik_new
-}}) 
+    for (i in 1:length(microbial[, 1:200])){
+      glm1 = glm.fit(y = df_noXenv[, i], x = cbind(1, Xenv[, 1], Xenv[, 2], u), intercept = TRUE, family=poisson(link='log')) 
+      beta_lambda[i, ] = t(glm1$coefficients) #1 x 4
+    }
+    
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:3] #200 x 3
+    lambda = beta_lambda[, 4] #200 x 1
+    
+    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
+    new_u = matrix(NA, nrow = nrow(microbial), ncol = 1) #56 x 1
+    
+    for (i in 1:nrow(df_noXenv)){
+      glm1 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ]) #invalid type without as.numeric
+      new_u[i] = glm1$coefficients 
+    }
+    
+    u = new_u #56 x 1
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
+    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+    loglik = loglik_new
+  }}) 
+  
+  j_all[k] = j
+  time3[k] = as.numeric(time_i[3])
+  pred_counts3 = exp(eta)
+  
+  pearson_resid3 = (df_noXenv[, 1:200] - pred_counts3)/sqrt(pred_counts3) 
+  sspearson_resid3[k] = sum(pearson_resid3^2)
+}
 
-pred_counts2 = exp(eta)
+time3
+sspearson_resid3
+j_all
 
-pearson_resid = (df_noXenv[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
-sspearson_resid = sum(pearson_resid^2)
+c(mean(time3), sqrt(var(time3)))
+c(mean(sspearson_resid3), sqrt(var(sspearson_resid3)))
 
 #AROUND 2X FASTER USING GLM.FIT VS GLM
-#pearson residuals o-e, sum of squared pearson residuals ~ likelihood -- how well something is fitting the data 
-
-
-#E(log_likelihood) - Kullback-liebler distance - expected difference in expected likelihoods for estimate and true value 
-#sum_i [mu_ilog(hat_mu_i)-hat_mu] - [mu_ilog(mu_i)-mu_i]
-#fairer to predictions with big variance from true
-#do multiple times and average, standard errors 
 ```
+
 ```{r alternating glms using 2 l.v.}
-
-#install.packages('glmnet')
 library(MASS)
-system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # generate 56 'observations' involving 2 latent variables
-beta_lambda = matrix(NA, nrow = length(microbial[1:200]), ncol = 4) #4 to account for 2 l.v and 2 betas
+ite = 10
+time4 = rep(NA, ite)
+sspearson_resid4 = rep(NA, ite)
+j_all2 = rep(NA, ite)
 
-loglik = -Inf
-for (j in 1:20){
-
-  for (i in 1:length(microbial[, 1:200])){
-    model = glm.fit(y = df_noXenv[, i], x = cbind(Xenv[, 1], Xenv[, 2], u), intercept = FALSE, family = poisson(link = 'log'))
-    beta_lambda[i, ] = t(model$coefficients) #1 x 4
-  }
-  beta_lambda #(beta lambda)
-  beta = beta_lambda[, 1:2] #200 x 2
-  lambda = beta_lambda[, 3:4] #200 x 2, 2 col. now
+for (k in 1:ite){
+  time_i = system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # generate 56 'observations' involving 2 latent variables
+  beta_lambda = matrix(NA, nrow = length(microbial[1:200]), ncol = 5) #5 to account for 2 l.v and 3 betas
   
-  new_Xenv = cbind(Xenv[, 1], Xenv[, 2]) #56 x 2
-  new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2, 2 col. now
+  N = 100
+  loglik = -Inf
+  for (j in 1:N){
+  
+    for (i in 1:length(microbial[, 1:200])){
+      glm2 = glm.fit(y = df_noXenv[, i], x = cbind(1, Xenv[, 1], Xenv[, 2], u), intercept = TRUE, family = poisson(link = 'log'))
+      beta_lambda[i, ] = t(glm2$coefficients) #1 x 5
+    }
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:3] #200 x 3
+    lambda = beta_lambda[, 4:5] #200 x 2, 2 col. now
+    
+    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
+    new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2, 2 col. now
+  
+    for (i in 1:nrow(df_noXenv)){
+      glm2 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ])
+      new_u[i, ] = t(glm2$coefficients) #1 x 2
+    }
+    u = new_u #56 x 2, 2 col. now
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
+    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+    loglik = loglik_new
+  }})
 
-  for (i in 1:nrow(df_noXenv)){
-    model2 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ])
-    new_u[i, ] = t(model2$coefficients) #1 x 2
-  }
-  u = new_u #56 x 2, 2 col. now
-  u
-  eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-  mu = exp(eta)
-  loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
-  if(abs(loglik_new - loglik) < 1e-3) break
-  loglik = loglik_new
-}})
+  j_all2[k] = j
+  time4[k] = as.numeric(time_i[3])
+  pred_counts4 = exp(eta)
+  
+  pearson_resid4 = (df_noXenv[, 1:200] - pred_counts4)/sqrt(pred_counts4) 
+  sspearson_resid4[k] = sum(pearson_resid4^2)
+}
 
-pred_counts2 = exp(eta)
+time4
+sspearson_resid4
+j_all2
 
-pearson_resid = (df_noXenv[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
-sspearson_resid = sum(pearson_resid^2)
-
+c(mean(time4), sqrt(var(time4)))
+c(mean(sspearson_resid4), sqrt(var(sspearson_resid4)))
 ```
 
+#glmnet:::fish crashed R
 
-```{r glmnet - penalty on lambda using 1 l.v. step size truncated due to divergence}
+```{r glmnet - penalty on lambda using 1 l.v.}
 #install.packages('glmnet')
 library(glmnet)
 
-system.time({u = rnorm(56, 0, 1) # 1 latent variable
+ite = 10
+time5 = rep(NA, ite)
+sspearson_resid5 = rep(NA, ite)
+j_all3 = rep(NA, ite)
 
-beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 3)
-
-#pen_glm = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, 1], family = poisson(link = 'log'), alpha = 0, lambda = 1)
-
-#pen_glm$beta
-#pen_glm$a0
-#beta_lambda = t(rbind(pen_glm$a0, pen_glm$beta)) #1 x 4
-#beta = beta_lambda[, 1:3]
-#lambda = beta_lambda[, 4]
-#new_Xenv = cbind(rep(1, nrow(df_noXenv)), Xenv[, 1], Xenv[, 2]) #56 x 3
-#new_u = matrix(NA, nrow = nrow(microbial), ncol = 1) #56 x 1
-
-#pen_glm2 = glmnet(x = lambda, y = as.numeric(df_noXenv[1, ]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[1, ], alpha = 0, lambda = 1)
-
-#new_u = pen_glm2$beta
-
-
-loglik = -Inf
-for (j in 1:20){
-
-  for (i in 1:length(microbial[, 1:200])){
-    pen_glm = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = FALSE, family = poisson(link = 'log'), alpha = 0, lambda = 1)
-    
-    beta_lambda[i, ] = t(c(as.numeric(pen_glm$beta))) #1 x 3, as.numeric and c() because it's stored as sparse matrix
-  }
-  beta_lambda #(beta lambda)
-  beta = beta_lambda[, 1:2] #200 x 2
-  lambda = beta_lambda[, 3] #200 x 1
+for (k in 1:ite){
+  time_i = system.time({u = rnorm(56, 0, 1) # 1 latent variable
+  beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 4)
+  N = 20
   
-  new_Xenv = cbind(Xenv[, 1], Xenv[, 2]) #56 x 2
-  new_u = matrix(NA, nrow = nrow(microbial), ncol = 1) #56 x 1
-
-  for (i in 1:nrow(df_noXenv)){
-    glm2 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ])
-    new_u[i] = glm2$coefficients
-  }
-  u = new_u #56 x 1
-  u
-  eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-  mu = exp(eta)
-  loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
-  if(abs(loglik_new - loglik) < 1e-3) break
-  loglik = loglik_new
-}})
-
-pred_counts2 = exp(eta)
-
-pearson_resid = (df_noXenv[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
-sspearson_resid = sum(pearson_resid^2)
-```
-
-```{r glmnet - penalty on lambda using 2 l.v. step size truncated due to divergence}
-#install.packages('glmnet')
-library(MASS)
-system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # 2 latent variables
-beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 4) #4 to account for 2 l.v and 2 coefficients beta
-
-loglik = -Inf
-for (j in 1:20){
-
-  for (i in 1:length(microbial[, 1:200])){
-    pen_glm = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = FALSE, family = poisson(link = 'log'), alpha = 0, lambda = 1)
-    
-    beta_lambda[i, ] = t(c(as.numeric(pen_glm$beta))) #1 x 4, as.numeric and c() because it's stored as sparse matrix
-  }
-  beta_lambda #(intercept beta lambda)
-  beta = beta_lambda[, 1:2] #200 x 2
-  lambda = beta_lambda[, 3:4] #200 x 2, 2 col. now
+  loglik = -Inf
+  for (j in 1:N){
   
-  new_Xenv = cbind(Xenv[, 1], Xenv[, 2]) #56 x 2
-  new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2, 2 col. now
-
-  for (i in 1:nrow(df_noXenv)){
-    glm2 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ])
-    new_u[i, ] = t(glm2$coefficients)
-  }
-  u = new_u #56 x 2, 2 col. now
-  u
-  eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-  mu = exp(eta)
-  loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
-  if(abs(loglik_new - loglik) < 1e-3) break
-  loglik = loglik_new
-}})
-
-pred_counts2 = exp(eta)
-
-pearson_resid = (df_noXenv[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
-sspearson_resid = sum(pearson_resid^2)
-```
-
-#Huber 2004 
-#gmf = penalised likelihood
-
-#glmnet using intercept = TRUE with row effects  ==> alphai + xibj + ui lambdaj for one l.v.
-```{r glmnet - penalty on lambda and u using 1 l.v. Chen step size truncated due to divergence}
-#install.packages('glmnet')
-#library(MASS)
-
-system.time({u = rnorm(56, 0, 1) # 1 latent variables
-
-beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 3)
-
-#pen_glm = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, 1], family = poisson(link = 'log'), alpha = 0, lambda = 1)
-
-#pen_glm$beta
-#pen_glm$a0
-#beta_lambda = t(c(pen_glm$a0, as.numeric(pen_glm$beta))) #1 x 5
-#beta = beta_lambda[, 1:3]
-#lambda = beta_lambda[, 4:5]
-#new_Xenv = cbind(rep(1, nrow(df_noXenv)), Xenv[, 1], Xenv[, 2]) #56 x 3
-#new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2
-
-#pen_glm2 = glmnet(x = as.matrix(lambda), y = as.numeric(df_noXenv[1, ]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[1, ], alpha = 0, lambda = 1)
-
-#new_u = pen_glm2$beta
-
-
-loglik = -Inf
-for (j in 1:20){
-
-  for (i in 1:length(microbial[, 1:200])){
-    pen_glm = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = FALSE, family = poisson(link = 'log'), alpha = 0, lambda = 5*sqrt(200))
+    for (i in 1:length(microbial[, 1:200])){
+      glmnet1 = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = TRUE, family = poisson(link = 'log'), alpha = 0, lambda = 1)
+      
+      beta_lambda[i, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) #1 x 4, as.numeric and c() because it's stored as sparse matrix
+    }
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:3] #200 x 3
+    lambda = beta_lambda[, 3] #200 x 1
     
-    beta_lambda[i, ] = t(as.numeric(pen_glm$beta)) #1 x 3, as.numeric and c() because it's stored as sparse matrix
-  }
-  beta_lambda #(beta lambda)
-  beta = beta_lambda[, 1:2] #200 x 2
-  lambda = beta_lambda[, 3] #200 x 1
+    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
+    new_u = matrix(NA, nrow = nrow(microbial), ncol = 1) #56 x 1
   
-  new_Xenv = cbind(Xenv[, 1], Xenv[, 2]) #56 x 2
-  new_u = matrix(NA, nrow = nrow(microbial), ncol = 1) #56 x 1
+    for (i in 1:nrow(df_noXenv)){
+      glmnet1 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ])
+      new_u[i] = glmnet1$coefficients
+    }
+    u = new_u #56 x 1
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
+    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+    loglik = loglik_new
+  }})
+  
+  j_all3[k] = j
+  time5[k] = as.numeric(time_i[3])
+  pred_counts5 = exp(eta)
+  
+  pearson_resid5 = (df_noXenv[, 1:200] - pred_counts5)/sqrt(pred_counts5) 
+  sspearson_resid5[k] = sum(pearson_resid5^2)
+}
 
-  for (i in 1:nrow(df_noXenv)){
-    pen_glm2 = glmnet(x = cbind(lambda, rep(0, length(lambda))), y = as.numeric(df_noXenv[i, 1:200]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ], alpha = 0, lambda = 5*sqrt(200))
-    new_u[i, ] = t(as.numeric(pen_glm2$beta)[1])
-  }
-  u = new_u #56 x 1
-  u
-  eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-  mu = exp(eta)
-  loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
-  if(abs(loglik_new - loglik) < 1e-3) break
-  loglik = loglik_new
-}}) 
+time5
+sspearson_resid5
+j_all3
 
-pred_counts2 = exp(eta)
-
-pearson_resid = (df_noXenv[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
-sspearson_resid = sum(pearson_resid^2)
+c(mean(time5), sqrt(var(time5)))
+c(mean(sspearson_resid5), sqrt(var(sspearson_resid5)))
 ```
 
 
-```{r glmnet - penalty on lambda and u using 2 l.v. Chen step size truncated due to divergence}
-#install.packages('glmnet')
-#library(MASS)
+```{r glmnet - penalty on lambda using 2 l.v}
+ite = 10
+time6 = rep(NA, ite)
+sspearson_resid6 = rep(NA, ite)
+j_all4 = rep(NA, ite)
 
-system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # 2 latent variables
-
-beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 4)
-
-#pen_glm = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, 1], family = poisson(link = 'log'), alpha = 0, lambda = 1)
-
-#pen_glm$beta
-#pen_glm$a0
-#beta_lambda = t(c(pen_glm$a0, as.numeric(pen_glm$beta))) #1 x 5
-#beta = beta_lambda[, 1:3]
-#lambda = beta_lambda[, 4:5]
-#new_Xenv = cbind(rep(1, nrow(df_noXenv)), Xenv[, 1], Xenv[, 2]) #56 x 3
-#new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2
-
-#pen_glm2 = glmnet(x = as.matrix(lambda), y = as.numeric(df_noXenv[1, ]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[1, ], alpha = 0, lambda = 1)
-
-#new_u = pen_glm2$beta
-
-
-loglik = -Inf
-for (j in 1:20){
-
-  for (i in 1:length(microbial[, 1:200])){
-    pen_glm = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = FALSE, family = poisson(link = 'log'), alpha = 0, lambda = 5*sqrt(200))
-    
-    beta_lambda[i, ] = t(as.numeric(pen_glm$beta)) #1 x 4, as.numeric and c() because it's stored as sparse matrix
-  }
-  beta_lambda #(beta lambda)
-  beta = beta_lambda[, 1:2] #200 x 2
-  lambda = beta_lambda[, 3:4] #200 x 2
+for (k in 1:ite){
+  time_i = system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # 2 latent variables
+  beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 5) #5 to account for 2 l.v and 3 coefficients beta
   
-  new_Xenv = cbind(Xenv[, 1], Xenv[, 2]) #56 x 2
-  new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2
+  N = 20
+  loglik = -Inf
+  for (j in 1:N){
+  
+    for (i in 1:length(microbial[, 1:200])){
+      glmnet2 = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = TRUE, family = poisson(link = 'log'), alpha = 0, lambda = 1)
+      
+      beta_lambda[i, ] = t(c(glmnet2$a0, as.numeric(glmnet2$beta))) #1 x 5, as.numeric and c() because it's stored as sparse matrix
+    }
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:3] #200 x 3
+    lambda = beta_lambda[, 4:5] #200 x 2, 2 col. now
+    
+    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
+    new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2, 2 col. now
+  
+    for (i in 1:nrow(df_noXenv)){
+      glmnet2 = glm.fit(y = as.numeric(df_noXenv[i, 1:200]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ])
+      new_u[i, ] = t(glmnet2$coefficients)
+    }
+    u = new_u #56 x 2, 2 col. now
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
+    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+    loglik = loglik_new
+  }})
+  
+  j_all4[k] = j
+  time6[k] = as.numeric(time_i[3])
+  pred_counts6 = exp(eta)
+  
+  pearson_resid6 = (df_noXenv[, 1:200] - pred_counts6)/sqrt(pred_counts6) 
+  sspearson_resid6[k] = sum(pearson_resid6^2)
+}
 
-  for (i in 1:nrow(df_noXenv)){
-    pen_glm2 = glmnet(x = lambda, y = as.numeric(df_noXenv[i, 1:200]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ], alpha = 0, lambda = 5*sqrt(200))
-    new_u[i, ] = t(as.numeric(pen_glm2$beta))
-  }
-  u = new_u #56 x 2
-  u
-  eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-  mu = exp(eta)
-  loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
-  if(abs(loglik_new - loglik) < 1e-3) break
-  loglik = loglik_new
-}}) 
+time6
+sspearson_resid6
+j_all4
 
-pred_counts2 = exp(eta)
-
-pearson_resid = (df_noXenv[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
-sspearson_resid = sum(pearson_resid^2)
-
-#check chen paper to see what penalty to use
+c(mean(time6), sqrt(var(time6)))
+c(mean(sspearson_resid6), sqrt(var(sspearson_resid6)))
 ```
 
-#look at approximation of variance again in breslow and clayton (pen likelihood, motivated by laplace approximation)
 
+```{r glmnet - penalty on lambda and u using 1 l.v. Chen}
+ite = 10
+time7 = rep(NA, ite)
+sspearson_resid7 = rep(NA, ite)
+j_all5 = rep(NA, ite)
+
+for (k in 1:ite){
+  time_i = system.time({u = rnorm(56, 0, 1) # 1 latent variables
+
+  beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 4)
+  
+  N = 20
+  K = 1
+  loglik = -Inf
+  for (j in 1:N){
+  
+    for (i in 1:length(microbial[, 1:200])){
+      glmnet3 = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = TRUE, family = poisson(link = 'log'), alpha = 0, lambda = 5*sqrt(K))
+      
+      beta_lambda[i, ] = t(c(glmnet3$a0, as.numeric(glmnet3$beta))) #1 x 3, as.numeric and c() because it's stored as sparse matrix
+    }
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:3] #200 x 3
+    lambda = beta_lambda[, 4] #200 x 1
+    
+    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
+    new_u = matrix(NA, nrow = nrow(microbial), ncol = 1) #56 x 1
+  
+    for (i in 1:nrow(df_noXenv)){
+      glmnet3 = glmnet(x = cbind(lambda, rep(0, length(lambda))), y = as.numeric(df_noXenv[i, 1:200]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ], alpha = 0, lambda = 5*sqrt(K))
+      new_u[i, ] = t(as.numeric(glmnet3$beta)[1]) #to drop the extra 0 column
+    }
+    u = new_u #56 x 1
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
+    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+    loglik = loglik_new
+  }}) 
+  
+  j_all5[k] = j
+  time7[k] = as.numeric(time_i[3])
+  pred_counts7 = exp(eta)
+  
+  pearson_resid7 = (df_noXenv[, 1:200] - pred_counts7)/sqrt(pred_counts7) 
+  sspearson_resid7[k] = sum(pearson_resid7^2)
+}
+
+time7
+sspearson_resid7
+j_all5
+
+c(mean(time7), sqrt(var(time7)))
+c(mean(sspearson_resid7), sqrt(var(sspearson_resid7)))
+```
+
+
+```{r glmnet - penalty on lambda and u using 2 l.v. Chen}
+ite = 10
+time8 = rep(NA, ite)
+sspearson_resid8 = rep(NA, ite)
+j_all6 = rep(NA, ite)
+
+for (k in 1:ite){
+  time_i = system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # 2 latent variables
+
+  beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 5)
+  
+  N = 20
+  K = 1
+  loglik = -Inf
+  for (j in 1:N){
+  
+    for (i in 1:length(microbial[, 1:200])){
+      glmnet4 = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = df_noXenv[, i], intercept = TRUE, family = poisson(link = 'log'), alpha = 0, lambda = 5*sqrt(K))
+      
+      beta_lambda[i, ] = t(c(glmnet4$a0, as.numeric(glmnet4$beta))) #1 x 5, as.numeric and c() because it's stored as sparse matrix
+    }
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:3] #200 x 3
+    lambda = beta_lambda[, 4:5] #200 x 2
+    
+    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
+    new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2
+  
+    for (i in 1:nrow(df_noXenv)){
+      glmnet4 = glmnet(x = lambda, y = as.numeric(df_noXenv[i, 1:200]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ], alpha = 0, lambda = 5*sqrt(K))
+      new_u[i, ] = t(as.numeric(glmnet4$beta))
+    }
+    u = new_u #56 x 2
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(df_noXenv[, 1:200]), lambda = mu, log = TRUE))
+    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+    loglik = loglik_new
+  }}) 
+  
+  j_all6[k] = j
+  time8[k] = as.numeric(time_i[3])
+  pred_counts8 = exp(eta)
+  
+  pearson_resid8 = (df_noXenv[, 1:200] - pred_counts8)/sqrt(pred_counts8) 
+  sspearson_resid8[k] = sum(pearson_resid8^2)
+}
+
+time8
+sspearson_resid8
+j_all6
+
+c(mean(time8), sqrt(var(time8)))
+c(mean(sspearson_resid8), sqrt(var(sspearson_resid8)))
+
+```
