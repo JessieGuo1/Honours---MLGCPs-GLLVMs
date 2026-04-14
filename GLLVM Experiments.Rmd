@@ -1,14 +1,11 @@
 ---
-title: "GLLVM Experiments"
+title: "GLLVM Experiments - Clean"
 output: html_document
 date: "2026-02-26"
 ---
 #Fitted 4 different models on microbial dataset with averaged pearson residuals and computation, along with their standard deviations.
 
 #Each model was fitted with both 1 latent variable and 2 latent variables separately
-```{r setup, include=FALSE}
-set.seed(0)
-```
 
 ```{r preparation}
 #install.packages("gllvm")
@@ -27,14 +24,14 @@ df_noXenv = microbial %>%  #no X variables
 ```
 
 
-```{r running gllvm 1 l.v.}
+```{r running gllvm - 1 l.v.}
 ite = 10
 time = rep(NA, ite)
 sspearson_resid = rep(NA, ite)
 
 for (i in 1:ite){
   time_i = system.time({
-    glvm1 = gllvm(microbial[, 1:200], Xenv[, 1:2], num.lv = 1, family = poisson(link = 'log'))
+    glvm1 = gllvm(microbial[, 1:200], Xenv[, 1:2], num.lv = 1, family = poisson(link = 'log'), method = "LA")
   }) 
 
   time[i] = as.numeric(time_i[3])
@@ -51,34 +48,35 @@ c(mean(time), sqrt(var(time)))
 c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
 ```
 
-```{r running gllvm 2 l.v.}
+```{r running gllvm - 2 l.v.}
 ite = 10
-time2 = rep(NA, ite)
-sspearson_resid2 = rep(NA, ite)
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
 
 for (i in 1:ite){
   time_i = system.time({
-  glvm2 = gllvm(microbial[, 1:200], Xenv[, 1:2], num.lv = 2, family = poisson(link = 'log'))
+  glvm2 = gllvm(microbial[, 1:200], Xenv[, 1:2], num.lv = 2, family = poisson(link = 'log'), method = "LA")
 }) 
   
-  time2[i] = as.numeric(time_i[3])
-  pred_counts2 = predict(glvm2, type = 'response', lv.pred = TRUE)
+  time[i] = as.numeric(time_i[3])
+  pred_counts = predict(glvm2, type = 'response', lv.pred = TRUE)
   
-  pearson_resid2 = (microbial[, 1:200] - pred_counts2)/sqrt(pred_counts2) 
-  sspearson_resid2[i] = sum(pearson_resid2^2)
+  pearson_resid = (microbial[, 1:200] - pred_counts)/sqrt(pred_counts) 
+  sspearson_resid[i] = sum(pearson_resid^2)
 }
 
-time2
-sspearson_resid2
-c(mean(time2), sqrt(var(time2)))
-c(mean(sspearson_resid2), sqrt(var(sspearson_resid2)))
+time
+sspearson_resid
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
 ```
 
-```{r alternating glms using 1 latent variable}
+
+```{r alternating glms - 1 l.v.}
 ite = 10
-time3 = rep(NA, ite)
-sspearson_resid3 = rep(NA, ite)
-j_all = rep(NA, ite)
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
+ite_converge_all = rep(NA, ite)
 
 for (k in 1:ite){
   time_i = system.time({u = rnorm(56, 0, 1) # simulating 56 observations for 1 latent variable
@@ -115,30 +113,31 @@ for (k in 1:ite){
     loglik = loglik_new
   }}) 
   
-  j_all[k] = j
-  time3[k] = as.numeric(time_i[3])
-  pred_counts3 = exp(eta)
+  ite_converge_all[k] = j
+  time[k] = as.numeric(time_i[3])
+  pred_counts = exp(eta)
   
-  pearson_resid3 = (df_noXenv[, 1:200] - pred_counts3)/sqrt(pred_counts3) 
-  sspearson_resid3[k] = sum(pearson_resid3^2)
+  pearson_resid = (df_noXenv[, 1:200] - pred_counts)/sqrt(pred_counts) 
+  sspearson_resid[k] = sum(pearson_resid^2)
 }
 
-time3
-sspearson_resid3
-j_all
+time
+sspearson_resid
+ite_converge_all
 
-c(mean(time3), sqrt(var(time3)))
-c(mean(sspearson_resid3), sqrt(var(sspearson_resid3)))
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
 
 #AROUND 2X FASTER USING GLM.FIT VS GLM
 ```
 
-```{r alternating glms using 2 l.v.}
+
+```{r alternating glms - 2 l.v.}
 library(MASS)
 ite = 10
-time4 = rep(NA, ite)
-sspearson_resid4 = rep(NA, ite)
-j_all2 = rep(NA, ite)
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
+ite_converge_all = rep(NA, ite)
 
 for (k in 1:ite){
   time_i = system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # generate 56 'observations' involving 2 latent variables
@@ -149,7 +148,7 @@ for (k in 1:ite){
   for (j in 1:N){
   
     for (i in 1:length(microbial[, 1:200])){
-      glm2 = glm.fit(y = df_noXenv[, i], x = cbind(1, Xenv[, 1], Xenv[, 2], u), intercept = TRUE, family = poisson(link = 'log'))
+      glm2 = glm.fit(y = as.numeric(df_noXenv[, i]), x = cbind(1, Xenv[, 1], Xenv[, 2], u), intercept = TRUE, family = poisson(link = 'log'))
       beta_lambda[i, ] = t(glm2$coefficients) #1 x 5
     }
     beta_lambda #(intercept beta lambda)
@@ -172,32 +171,32 @@ for (k in 1:ite){
     loglik = loglik_new
   }})
 
-  j_all2[k] = j
-  time4[k] = as.numeric(time_i[3])
-  pred_counts4 = exp(eta)
+  ite_converge_all[k] = j
+  time[k] = as.numeric(time_i[3])
+  pred_counts = exp(eta)
   
-  pearson_resid4 = (df_noXenv[, 1:200] - pred_counts4)/sqrt(pred_counts4) 
-  sspearson_resid4[k] = sum(pearson_resid4^2)
+  pearson_resid = (df_noXenv[, 1:200] - pred_counts)/sqrt(pred_counts) 
+  sspearson_resid[k] = sum(pearson_resid^2)
 }
 
-time4
-sspearson_resid4
-j_all2
+time
+sspearson_resid
+ite_converge_all
 
-c(mean(time4), sqrt(var(time4)))
-c(mean(sspearson_resid4), sqrt(var(sspearson_resid4)))
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
 ```
 
 #glmnet:::fish crashed R
 
-```{r glmnet - penalty on lambda using 1 l.v.}
+```{r glmnet - penalty on lambda - 1 l.v.}
 #install.packages('glmnet')
 library(glmnet)
 
 ite = 10
-time5 = rep(NA, ite)
-sspearson_resid5 = rep(NA, ite)
-j_all3 = rep(NA, ite)
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
+ite_converge_all = rep(NA, ite)
 
 for (k in 1:ite){
   time_i = system.time({u = rnorm(56, 0, 1) # 1 latent variable
@@ -232,28 +231,28 @@ for (k in 1:ite){
     loglik = loglik_new
   }})
   
-  j_all3[k] = j
-  time5[k] = as.numeric(time_i[3])
-  pred_counts5 = exp(eta)
+  ite_converge_all[k] = j
+  time[k] = as.numeric(time_i[3])
+  pred_counts = exp(eta)
   
-  pearson_resid5 = (df_noXenv[, 1:200] - pred_counts5)/sqrt(pred_counts5) 
-  sspearson_resid5[k] = sum(pearson_resid5^2)
+  pearson_resid = (df_noXenv[, 1:200] - pred_counts)/sqrt(pred_counts) 
+  sspearson_resid[k] = sum(pearson_resid^2)
 }
 
-time5
-sspearson_resid5
-j_all3
+time
+sspearson_resid
+ite_converge_all
 
-c(mean(time5), sqrt(var(time5)))
-c(mean(sspearson_resid5), sqrt(var(sspearson_resid5)))
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
 ```
 
 
-```{r glmnet - penalty on lambda using 2 l.v}
+```{r glmnet - penalty on lambda - 2 l.v}
 ite = 10
-time6 = rep(NA, ite)
-sspearson_resid6 = rep(NA, ite)
-j_all4 = rep(NA, ite)
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
+ite_converge_all = rep(NA, ite)
 
 for (k in 1:ite){
   time_i = system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # 2 latent variables
@@ -288,24 +287,246 @@ for (k in 1:ite){
     loglik = loglik_new
   }})
   
-  j_all4[k] = j
-  time6[k] = as.numeric(time_i[3])
-  pred_counts6 = exp(eta)
+  ite_converge_all[k] = j
+  time[k] = as.numeric(time_i[3])
+  pred_counts = exp(eta)
   
-  pearson_resid6 = (df_noXenv[, 1:200] - pred_counts6)/sqrt(pred_counts6) 
-  sspearson_resid6[k] = sum(pearson_resid6^2)
+  pearson_resid = (df_noXenv[, 1:200] - pred_counts)/sqrt(pred_counts) 
+  sspearson_resid[k] = sum(pearson_resid^2)
 }
 
-time6
-sspearson_resid6
-j_all4
+time
+sspearson_resid
+ite_converge_all
 
-c(mean(time6), sqrt(var(time6)))
-c(mean(sspearson_resid6), sqrt(var(sspearson_resid6)))
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
 ```
 
 
-```{r glmnet - penalty on lambda and u using 1 l.v. Chen}
+
+```{r alternating glms - 1 l.v. - updating through constraints -- Chen}
+
+#install.packages("gllvm")
+library(gllvm)
+library(tidyverse)
+
+data(microbialdata)
+microbial = data.frame(microbialdata)
+dim(microbial)
+
+Xenv = microbial[, 986:991]
+
+df_noXenv = microbial %>%  #no X variables 
+  dplyr::select(-(Xenv.SOM:Xenv.Soiltype))
+
+# projection onto ball of radius c
+proc = function(y, c){
+  y = as.numeric(y)
+  if (sqrt(sum(y^2)) <= c) return(y)
+  c * y / sqrt(sum(y^2))
+}
+    
+lv_chen = function(Y, X, K, u_all, max_iter){
+  n = nrow(Y)          # 56
+  J = ncol(Y)          # 200
+  c = 5 * sqrt(K)
+
+  beta_all = matrix(NA, nrow = J, ncol = ncol(X))
+  lambda_all = matrix(NA, nrow = J, ncol = ncol(u_all))
+
+  # initialize column parameters from Poisson GLMs without latent term
+  for (j in 1:J) {
+    fit_j = glm.fit(
+      y = Y[, j],
+      x = cbind(X, u_all), 
+      family = poisson(link = "log")
+    )
+    coef_j = as.matrix(t(fit_j$coefficients))
+    beta_all[j, ] = coef_j[1:ncol(X)]    
+    lambda_all[j, ] = coef_j[(ncol(X) + 1):(ncol(X) + ncol(u_all))]
+  }
+
+  loglik = -Inf
+  
+  beta_proj = matrix(NA, nrow = J, ncol = ncol(X)) 
+  lambda_proj = matrix(NA, nrow = J, ncol = ncol(u_all)) 
+  u_proj = matrix(NA, nrow = n, ncol = ncol(u_all)) #56 x 1
+
+  for (iter in 1:max_iter) {
+  ## ---------------------------
+  ## (a) ROWS FIRST: update u_i
+  ## ---------------------------
+    for (i in 1:n) {
+      
+      # current offset for row i across all columns
+      
+      # row-wise GLM update
+      glm1 = glm.fit(
+        y = as.numeric(Y[i, ]),
+        x = as.matrix(lambda_all),   # J x 1
+        intercept = FALSE,
+        family = poisson(link = "log"),
+        offset = X[i, ] %*% t(beta_all), # 1 x 200
+        start = u_all[i, ],
+        control = glm.control(maxit = 1)
+      )
+      
+      u = as.matrix(t(glm1$coefficients))
+
+      u_proj[i, ] = proc(u, sqrt(c^2 - 1))
+    }
+    
+    u_all = u_proj
+    
+    ## -----------------------------------------
+    ## (b) COLUMNS SECOND: update beta_i, lambda_i
+    ## -----------------------------------------
+    
+    X_u = cbind(X, u_all)
+    
+    for (j in 1:J) {
+      
+      start_vec = c(beta_all[j, ], lambda_all[j, ])
+      
+      glm1 = tryCatch({
+        glm.fit(
+        y = Y[, j],
+        x = X_u,
+        family = poisson(link = "log"),
+        start = start_vec,
+        control = glm.control(maxit = 1)
+      )}, error = function(e) return(NULL))
+      
+      #if (!is.null(glm1) && all(is.finite(glm1$coefficients))) {
+        coef_j = as.matrix(t(glm1$coefficients))
+      #} else {
+        #coef_j = start_vec * 0.8
+      #}
+      
+      beta_j = coef_j[1:ncol(X)]
+      lambda_j = coef_j[(ncol(X) + 1):(ncol(X) + ncol(u_all))]
+      
+      comb_j = c(beta_j, lambda_j) #4 x 1
+      comb_proj = proc(comb_j, c)
+      
+      beta_proj[j, ] = comb_proj[1:ncol(X)]
+      lambda_proj[j, ] = comb_proj[(ncol(X) + 1):(ncol(X) + ncol(u_all))]
+    }
+    
+    beta_all = beta_proj
+    lambda_all = lambda_proj
+    
+    ## ----------------
+    ## likelihood check
+    ## ----------------
+    
+    eta = X %*% t(beta_all) + u_all %*% t(lambda_all) #56 x 200
+    eta = pmin(pmax(eta, -10), 10)
+    mu = exp(eta)
+    
+    loglik_new = sum(dnorm(u_all, log = TRUE)) +
+      sum(dpois(Y, lambda = mu, log = TRUE))
+    
+    rel_change = abs(loglik_new - loglik) / (abs(loglik_new))
+    if (rel_change < 1e-3) break
+    
+    loglik = loglik_new
+  }
+  return(list(Y = Y, beta_all = beta_all, lambda_all = lambda_all, u_all = u_all, mu = mu, loglik = loglik, loglik_new = loglik_new, iter = iter))
+} 
+
+ite = 10
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
+ite_converge_all = rep(NA, ite)
+loglik_new_all = rep(NA, ite)
+loglik_all = rep(NA, ite)
+
+for (k in 1:ite){
+  time_i = system.time({alg = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = cbind(1, scale(Xenv[, 1]), scale(Xenv[, 2])), K = 1, u_all = as.matrix(rnorm(56, 0, 1)), max_iter = 20)
+  })
+  
+  ite_converge_all[k] = alg$iter
+  time[k] = as.numeric(time_i[3])
+  
+  pred_counts = alg$mu
+  pearson_resid = (alg$Y - pred_counts) / sqrt(pred_counts)
+  sspearson_resid[k] = sum(pearson_resid^2)
+  
+  loglik_new_all[k] = alg$loglik_new
+  loglik_all[k] = alg$loglik
+}
+
+time
+sspearson_resid
+ite_converge_all
+loglik_new_all
+loglik_all #why different?
+
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
+```
+
+
+```{r alternating glms - 2 l.v. - updating parameters through constraints -- Chen}
+#install.packages("gllvm")
+library(gllvm)
+library(tidyverse)
+library(MASS)
+
+data(microbialdata)
+microbial = data.frame(microbialdata)
+dim(microbial)
+
+Xenv = microbial[, 986:991]
+
+df_noXenv = microbial %>%  #no X variables 
+  dplyr::select(-(Xenv.SOM:Xenv.Soiltype))
+
+# projection onto ball of radius c
+proc = function(y, c){
+  if (any(is.na(y))) return(rep(0, length(y)))
+  y = as.numeric(y)
+  if (sqrt(sum(y^2)) <= c) return(y)
+  c * y / sqrt(sum(y^2))
+}
+
+ite = 10
+time = rep(NA, ite)
+sspearson_resid = rep(NA, ite)
+ite_converge_all = rep(NA, ite)
+loglik_new_all = rep(NA, ite)
+loglik_all = rep(NA, ite)
+
+for (k in 1:ite){
+  time_i = system.time({lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = cbind(1, scale(Xenv[, 1]), scale(Xenv[, 2])), K = 2, u_all = mvrnorm(n = 56, mu = c(0, 0), Sigma = diag(2)), max_iter = 30)
+  })
+  
+  ite_converge_all[k] = alg$iter
+  time[k] = as.numeric(time_i[3])
+  
+  pred_counts = alg$mu
+  pearson_resid = (alg$Y - pred_counts) / sqrt(pred_counts)
+  sspearson_resid[k] = sum(pearson_resid^2)
+  
+  loglik_new_all[k] = alg$loglik_new
+  loglik_all[k] = alg$loglik
+}
+
+time
+sspearson_resid
+ite_converge_all
+loglik_new_all
+loglik_all #why different?
+
+c(mean(time), sqrt(var(time)))
+c(mean(sspearson_resid), sqrt(var(sspearson_resid)))
+```
+
+
+
+```{r glmnet - penalty on lambda and u using 1 l.v.}
 ite = 10
 time7 = rep(NA, ite)
 sspearson_resid7 = rep(NA, ite)
@@ -363,7 +584,8 @@ c(mean(sspearson_resid7), sqrt(var(sspearson_resid7)))
 ```
 
 
-```{r glmnet - penalty on lambda and u using 2 l.v. Chen}
+
+```{r glmnet - penalty on lambda and u using 2 l.v.}
 ite = 10
 time8 = rep(NA, ite)
 sspearson_resid8 = rep(NA, ite)
