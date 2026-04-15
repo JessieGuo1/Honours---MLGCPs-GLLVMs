@@ -507,7 +507,7 @@ df_noXenv = microbial %>%  #no X variables
 
 # projection onto ball of radius c
 proc = function(y, c){
-  if (any(is.na(y))) return(rep(0, length(y)))
+  #if (any(is.na(y))) return(rep(0, length(y)))
   y = as.numeric(y)
   #if (any(!is.finite(y))) stop("non-finite proposal in proj_ball")
   if (sqrt(sum(y^2)) <= c) return(y)

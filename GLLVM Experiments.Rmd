@@ -443,6 +443,7 @@ ite_converge_all = rep(NA, ite)
 loglik_new_all = rep(NA, ite)
 loglik_all = rep(NA, ite)
 
+suppressWarnings(
 for (k in 1:ite){
   time_i = system.time({alg = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = cbind(1, scale(Xenv[, 1]), scale(Xenv[, 2])), K = 1, u_all = as.matrix(rnorm(56, 0, 1)), max_iter = 20)
   })
@@ -457,6 +458,7 @@ for (k in 1:ite){
   loglik_new_all[k] = alg$loglik_new
   loglik_all[k] = alg$loglik
 }
+)
 
 time
 sspearson_resid
@@ -486,7 +488,6 @@ df_noXenv = microbial %>%  #no X variables
 
 # projection onto ball of radius c
 proc = function(y, c){
-  if (any(is.na(y))) return(rep(0, length(y)))
   y = as.numeric(y)
   if (sqrt(sum(y^2)) <= c) return(y)
   c * y / sqrt(sum(y^2))
@@ -499,8 +500,9 @@ ite_converge_all = rep(NA, ite)
 loglik_new_all = rep(NA, ite)
 loglik_all = rep(NA, ite)
 
+suppressWarnings(
 for (k in 1:ite){
-  time_i = system.time({lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = cbind(1, scale(Xenv[, 1]), scale(Xenv[, 2])), K = 2, u_all = mvrnorm(n = 56, mu = c(0, 0), Sigma = diag(2)), max_iter = 30)
+  time_i = system.time({alg = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = cbind(1, scale(Xenv[, 1]), scale(Xenv[, 2])), K = 2, u_all = mvrnorm(n = 56, mu = c(0, 0), Sigma = diag(2)), max_iter = 30)
   })
   
   ite_converge_all[k] = alg$iter
@@ -513,6 +515,7 @@ for (k in 1:ite){
   loglik_new_all[k] = alg$loglik_new
   loglik_all[k] = alg$loglik
 }
+)
 
 time
 sspearson_resid
