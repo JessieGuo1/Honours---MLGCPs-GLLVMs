@@ -1,0 +1,351 @@
+---
+title: "lgcp Fitting glms"
+output:
+  pdf_document: default
+  html_document: default
+date: "2026-08-12"
+editor_options:
+  chunk_output_type: console
+---
+
+```{r Data Preprocessing}
+library(disdat)
+library(mgcv)
+library(sf)
+library(spatstat)
+library(fields)
+library(tmap)
+library(grid)
+library(units)
+library(stringr)
+library(dplyr)
+library(glmnet)
+library(scampr)
+library(glmmTMB)
+
+#load data
+po = disPo("NSW")
+bg = disBg("NSW")
+border_lonlat = disBorder("NSW")
+
+#convert presence/background data frames to sf objects using their lon/lat coords (EPSG:4326)
+po_lonlat = st_as_sf(po, coords = c("x", "y"), crs = 4326, remove = FALSE) #remove = FALSE keeps x, y
+bg_lonlat = st_as_sf(bg, coords = c("x", "y"), crs = 4326, remove = FALSE)
+
+target_crs = 3577 # Australian Albers, coordinates in metres
+
+#project border, presence, and background points from lon/lat into Albers metres
+border_proj = st_transform(border_lonlat, crs = target_crs)
+po_proj = st_transform(po_lonlat, crs = target_crs) 
+bg_proj = st_transform(bg_lonlat, crs = target_crs)
+
+#extract projected coordinates as a plain matrix
+coords_po = st_coordinates(po_proj)
+coords_bg = st_coordinates(bg_proj)
+
+#drop geometry column --> plain data frame
+po_model = st_drop_geometry(po_proj)
+bg_model = st_drop_geometry(bg_proj)
+
+#rescale projected coordinates from metres to kilometres, for numerical stability
+po_model$x = coords_po[, "X"]/1000
+po_model$y = coords_po[, "Y"]/1000
+
+bg_model$x <- coords_bg[, "X"]/1000
+bg_model$y <- coords_bg[, "Y"]/1000
+
+#covariates of data
+covar_names = c("cti", "disturb", "mi", "rainann", "raindq", "rugged",
+                "soildepth", "soilfert", "solrad", "tempann", "tempmin", "topo", "vegsys")
+
+#keep rows with complete covariate data
+po_keep = complete.cases(po_model[, covar_names])
+bg_keep = complete.cases(bg_model[, covar_names])
+
+po_lonlat = po_lonlat[po_keep, ]
+bg_lonlat = bg_lonlat[bg_keep, ]
+
+#total study region area (km^2), used to compute quadrature weights
+domain_area_km2 <- as.numeric(set_units(sum(st_area(border_proj)), km^2))
+
+load("bg_model.RDATA")
+quad_wt <- domain_area_km2 / nrow(bg_model) #each background/quadrature point represents domain_area_km2
+```
+
+
+```{r Build presence, quadrature data frames}
+#processed dataframes
+presence_df = data.frame(
+  spid = po_model$spid, 
+  x = po_model$x, y = po_model$y,
+  po_model[, covar_names],
+  presence = 1, 
+  quad.size = 0) #quadrature weights not used at the point events
+
+quad = data.frame(
+  x = bg_model$x, y = bg_model$y,
+  bg_model[, covar_names],
+  presence = 0,
+  quad.size = quad_wt) #area represented per quad point
+
+species = unique(po_model$spid)
+m = length(species) #no. of species
+q <- nrow(quad) #no. of quadrature points
+
+#replicate background points once per species for multi-species scheme)
+quad <- quad[rep(seq_len(q), m), ]
+quad$spid <- rep(species, each = q) #label each replicate block with its species id
+
+#combine presence, quadrature rows into long-format dataframe
+dat <- rbind(presence_df, quad)
+n <- nrow(dat)
+
+#pt/wt - standard DWPR (down-weighted Poisson regression) construction
+#pt = 1 - presence rows, 0 - quadrature rows
+#wt = tiny fixed weight for presence rows, area-based weight for quadrature rows
+dat$pt = dat$presence
+dat$pt = dat$presence
+dat$wt = ifelse(dat$presence == 1, 1e-6, dat$quad.size)
+```
+
+
+```{r Scaling}
+cont_vars <- setdiff(covar_names, "vegsys")
+dat_scaled = scale(dat[, cont_vars])
+dat[, cont_vars] = as.data.frame(dat_scaled) 
+```
+
+```{r Build spatial basis functions}
+#Regular grid of radial basis functions covering domain, resolution set by nodes.on.long.edge
+#Use the ones used in fitting scampr?
+bfs <- simple_basis(nodes.on.long.edge = 10, dat)
+
+#evaluate basis functions at every data point
+Z = as.matrix(get.bf.matrix(bfs, dat[, c("x", "y")]))
+
+#drop basis functions with zero support - pruned basis functions
+nonzero_cols = colSums(Z != 0, na.rm = TRUE) > 0
+Z_star = Z[, nonzero_cols, drop = FALSE] #543323 x 50
+```
+
+
+```{r Fitting - alternating column/row updates (single latent spatial factor}
+ridgePen=0.1 #penalty strength
+nGlmnetIter=20 #max iterations glmnet allowed
+
+#initialise shared latent spatial field coefficients (u), one per basis function
+u = rnorm(ncol(Z_star), 0, 1)
+
+#rename spid, attach Zu = each basis function's column scaled by u[k]
+#(elementwise scaling via sweep - keeps all 50 basis functions SEPARATE, so column-update step can estimate full 50-length loading vector per species)
+dat_rename = dat %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+"))) %>% 
+  mutate(Zu = sweep(Z_star, 2, u, "*"))
+  #mutate(Zu = Z_star%*%u)
+
+chosen_spid = unique(dat_rename$spid)
+n_species = length(chosen_spid)
+
+X_full = cbind(1, dat_rename$tempann, dat_rename$rainann, dat_rename$rugged) #543323 x 4, fixed-effect design matrix
+beta_lambda = matrix(NA,  nrow = length(chosen_spid), ncol = ncol(dat_rename$Zu) + 4) #fitted intercept+beta+lambda per species
+
+N = 20 #max no. of outer (column-update + row-update) iterations
+loglik = -Inf
+
+for (iter in 1:N){
+  # column update: for each species, fit fixed effects + basis-function loadings (lambda)
+  for (j in seq_along(chosen_spid)){ #full presence dataset containing all species
+    i = chosen_spid[j]
+    #design matrix - covariates + species' rows of spatial term (Zu)
+    X = cbind(dat_rename$tempann[dat_rename$spid == i], dat_rename$rainann[dat_rename$spid == i], dat_rename$rugged[dat_rename$spid == i], dat_rename$Zu[dat_rename$spid == i, ])
+    
+    #weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
+    glmnet1 = glmnet(y = dat_rename$pt[dat_rename$spid == i]/dat_rename$wt[dat_rename$spid == i], x = X, intercept = TRUE, family = poisson(link = 'log'), weights = dat_rename$wt[dat_rename$spid == i], alpha = 0, lambda = ridgePen, maxit=nGlmnetIter) #penalty.factor = penalty_factor)
+    
+    # store this species' intercept + beta (3 covariates) + lambda (50 loadings)
+    beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
+  }
+  
+  #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
+  beta_lambda
+  beta = beta_lambda[, 1:ncol(X_full)] #54 x 4
+  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #54 x 50
+  
+  #name lambda's rows by species id, so each row of dat_rename can look up its own species' loadings
+  rownames(lambda) = as.matrix(chosen_spid)
+  lambda_rep = lambda[as.character(dat_rename$spid), ] #543323 x 50 - every row's own species' loadings
+  
+  #row update: fit one shared spatial field (u), jointly, across all species/rows
+  #elementwise product: each basis function scaled by that row's species' loading
+  X_joint = Z_star * lambda_rep #543323 x 50
+  
+  #fixed-effect linear predictor for every row, computed against every species at once
+  offset_matrix = X_full%*%t(beta) #543323 x 54
+  
+  #for each row, pick the column matching that row's own species -- only one of the 54 hypothetical 'predictions' in offset_matrix is the right one 
+  species_col_idx = match(dat_rename$spid, chosen_spid) #543323 x 1
+  offset = offset_matrix[cbind(seq_len(nrow(dat_rename)), species_col_idx)] #543323 x 1: matrix indexing -- pick one value per row; returns 543323 values = offset_matrix[row_idx, col_idx], e.g. offset_matrix[27, 2] to match each row's (dat_rename) true species label back to the correct column
+    
+  #fit shared u via one joint ridge regression across all rows/species at once
+  glmnet1 = glmnet(x = X_joint, y = dat_rename$pt/dat_rename$wt, intercept = FALSE, family=poisson(link='log'), weights = dat_rename$wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, maxit=nGlmnetIter) 
+  
+  new_u = as.numeric(glmnet1$beta)
+    
+  u = new_u #50 x 1, updated shared spatial field coefficients
+  print(u)
+  
+  #rebuild Zu with updated u, for next iteration's column update
+  dat_rename$Zu = sweep(Z_star, 2, u, "*") #Z_star%*%u  #543323 x 50
+  #dat_rename$Zu = Z_star%*%u
+  
+  #convergence check - weighted Poisson-process log-likelihood kernel + Gaussian prior on u --- ##
+  eta = offset + (Z_star * lambda_rep) %*% u #543323 x 1, per-row linear predictor (fixed + spatial)
+  mu = exp(eta)
+  
+  #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+  loglik_new = sum(dat_rename$wt * (dat_rename$pt * log(mu) - mu))
+  cat("iter", iter, "loglik:", loglik_new, "\n")
+  
+  #stop once relative change in log-likelihood is small
+  if(abs((loglik_new - loglik)/loglik_new) < 1e-6) break
+  loglik = loglik_new}
+
+```
+
+
+```{r Intensity map for a chosen species}
+#prediction grid coordinates + covariates
+load("grid_xy.RDATA")
+
+#fixed-effect design matrix at grid locations
+X_grid = model.matrix( ~tempann + rainann + rugged, data = grid_xy) #18277 x 4
+
+#evaluate basis functions at grid locations, using the same bfs as model fitting
+Z_grid = as.matrix(get.bf.matrix(bfs, grid_xy[, c("x", "y")])) #18277 x 60
+#nonzero_cols = colSums(Z_grid != 0, na.rm = TRUE) > 0
+Z_grid_star = Z_grid[, nonzero_cols, drop = FALSE] #18277 x 50
+
+#spatial term at grid locations, scaled by the fitted shared u
+Zu_grid = sweep(Z_grid_star, 2, u, "*")
+
+target_species_id = 9
+species_idx = which(chosen_spid == target_species_id)
+
+#predicted intensity for every species at every grid cell, then select just one species' column
+z_matrix = exp(X_grid%*%t(beta) + Zu_grid%*%t(lambda))
+grid_xy$z = z_matrix[, species_idx]
+
+#builds intensity map - study region border + fitted intensity surface + this species' presence points
+intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label = ""){
+  map <- tm_shape(border_lonlat) + # create tmap object
+    tm_polygons() + # add the border
+    tm_shape(grid_pred_lonlat) + # create tmap object for the points to overlay
+    tm_polygons(fill = "log_intensity",
+                fill.scale = tm_scale_continuous(
+                  values = "turbo",
+                  #limits =  c(-8, 0),
+                  outliers.trunc = c(TRUE, TRUE)),
+                col = NA,
+                fill.legend = tm_legend(title = "Log fitted intensity")) +
+    tm_shape(species_points_lonlat) +
+    tm_dots(size = 0.2, fill = "red", shape = 4, alpha = 0.8, legend.show = FALSE) + # add the points
+    tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
+    tm_layout(main.title = paste("Training data: ", species_label),  main.title.position = "center") + # manage the layout
+    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
+            labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
+  
+#  graphics.off()          # close corrupted/open graphics devices
+#  tmap_mode("plot")       # ensure static plotting mode
+#  print(map)
+  
+#  tmap_arrange(
+#    map_po,
+#    map,
+#    ncol = 2)
+}
+
+#spatial polygons matching grid_xy locations
+load("grid_cells_proj.RDATA") 
+#attach predicted intensity to grid cell geometries, transform to lon/lat for plotting
+grid_pred_proj = st_sf(intensity = grid_xy$z,
+                       log_intensity = log(grid_xy$z),
+                       geometry = grid_cells_proj)
+grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
+
+#pull this species' own presence points, convert km back to metres, then to lon/lat for plotting
+species_points = dat_rename %>% filter(spid == target_species_id, pt == 1)
+species_points_metres = species_points
+species_points_metres$x = species_points$x * 1000
+species_points_metres$y = species_points$y * 1000
+
+species_points_sf = st_as_sf(species_points_metres, coords = c("x", "y"), crs = target_crs)
+species_points_lonlat = st_transform(species_points_sf, crs = 4326)
+
+glm_mreg_map = intensity_map(grid_pred_lonlat, species_points_lonlat, species_label = 9)
+print(glm_mreg_map)
+```
+
+
+```{r Inhomogeneous K functions}
+#diagnostic for the chosen species, target_species_id
+
+#Calculate observed, simulated K functions
+
+#prediction grid, drop old "z" column, then re-attach this species' own z
+domain.grid = subset(grid_xy, select = -z)
+#predict intensity values for this species at every grid cell
+domain.grid$z = grid_xy$z
+
+#parameter values - this species' own 50 basis-function loading
+lambda_j = lambda[species_idx, ]
+
+#variance of the shared latent spatial field coefficients u (assumed common across all 50 basis functions)
+var_u = var(u)
+
+#per-basis-function variance of this species' realised spatial contribution (u_k * lambda_jk):
+#Var(u_k * lambda_jk) = lambda_jk^2 * Var(u_k), lambda_jk fixed, known
+vars <- var_u * lambda_j^2
+
+#propagate variance through basis functions at every grid location - Var(sum_k Z_k(loc) * u_k * lambda_jk) = sum_k Z_k(loc)^2 * Var(u_k * lambda_jk)
+var_smooth_grid <- drop(Z_grid_star^2 %*% vars) 
+
+#average propagated variance
+var_smooth = mean(var_smooth_grid)
+#var_smooth = var(drop(Z_grid_star%*%u)) #Z_grid_star
+
+#this species' fixed-effect-only linear predictor - used as mean
+domain.grid$mean = drop(X_grid%*%beta[species_idx, ])
+
+#build observation window in same centred/rescaled km coordinate system used throughout
+border_km = st_union(st_geometry(border_proj))/1000
+st_crs(border_km) = NA
+win = as.owin(st_sf(geometry = border_km))
+
+#convert fixed-effect surface and full fitted intensity surface into spatstat pixel images
+fixed.im = as.im(domain.grid[, c("x", "y", "mean")], W = win)
+#converted predicted intensity value into spatstat pixel images
+pred.im = as.im(domain.grid[,c("x","y","z")], W = win)
+
+#simulate the envelopes/bounds
+
+#rename presence_df's spid to match dat_rename's convention, then subset to just this species' own presence locations
+pres_df_rename = presence_df %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+sp_presence_df = pres_df_rename[pres_df_rename$spid == target_species_id, ]
+# build species' point pattern within study window
+po_sp_ppp = ppp(x = sp_presence_df$x,
+                y = sp_presence_df$y,
+                window = win)
+
+#load("opt.RDATA")
+
+#observed inhomogeneous K-function for this species, using its fitted intensity surface
+glm1_mreg_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
+#simulate comparison point patterns from a log-Gaussian Cox process
+glm1_mreg_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = bfs$scale[1]))) #sqrt(3)*opt$minimum
+
+#produce graphs
+load("Kfunc.RDATA")
+glm1_kfunc = Kfunc(glm1_mreg_K_obs, glm1_mreg_K_env)
+```
+
