@@ -1,5 +1,5 @@
 ---
-title: "lgcp Fitting glms"
+title: "mlgcp fitting - glmnet"
 output:
   pdf_document: default
   html_document: default
@@ -22,7 +22,7 @@ library(dplyr)
 library(glmnet)
 library(scampr)
 library(glmmTMB)
-
+set.seed(0)
 #load data
 po = disPo("NSW")
 bg = disBg("NSW")
@@ -118,14 +118,32 @@ dat[, cont_vars] = as.data.frame(dat_scaled)
 ```{r Build spatial basis functions}
 #Regular grid of radial basis functions covering domain, resolution set by nodes.on.long.edge
 #Use the ones used in fitting scampr?
-bfs <- simple_basis(nodes.on.long.edge = 10, dat)
+m.ipp <- scampr(presence ~ tempann + rainann + rugged,
+                data = dat, #predictors, coordinates, quadrature weights at point events and quadrature points
+                coord.names = c("x", "y"), 
+                quad.weights.name = "quad.size", # column name of quadrature weights in dat_po
+                model.type = "PO",
+                include.sre	= FALSE)
+
+# can fit increasingly dense, regular grids of basis functions
+bf.search.res <- basis.search(m.ipp, # base model, usually an IPP
+                              max.basis.functions = 300, # stopping point to configurations to trial
+                              which.approx = "variational", return.model = FALSE) # LGCP model type: variational or Laplace (the latter longer to compute)
+# use basis configuration that achieves maximum fitted likelihood
+bfs <- simple_basis(bf.search.res$nodes[which.max(bf.search.res$ll)], dat)
+# fit Laplace version of LGCP using "best" basis configuration:
+m.lgcp_lp <- scampr(presence ~ tempann + rainann + rugged,
+                    data = dat, model.type = "PO",
+                    include.sre	= TRUE,
+                    sre.approx = "laplace",
+                    basis.functions = bfs)
 
 #evaluate basis functions at every data point
-Z = as.matrix(get.bf.matrix(bfs, dat[, c("x", "y")]))
+Z = as.matrix(get.bf.matrix(m.lgcp_lp, dat[, c("x", "y")]))
 
 #drop basis functions with zero support - pruned basis functions
 nonzero_cols = colSums(Z != 0, na.rm = TRUE) > 0
-Z_star = Z[, nonzero_cols, drop = FALSE] #543323 x 50
+Z_star = Z[, nonzero_cols, drop = FALSE] #543323 x 43
 ```
 
 
@@ -147,7 +165,7 @@ chosen_spid = unique(dat_rename$spid)
 n_species = length(chosen_spid)
 
 X_full = cbind(1, dat_rename$tempann, dat_rename$rainann, dat_rename$rugged) #543323 x 4, fixed-effect design matrix
-beta_lambda = matrix(NA,  nrow = length(chosen_spid), ncol = ncol(dat_rename$Zu) + 4) #fitted intercept+beta+lambda per species
+beta_lambda = matrix(NA,  nrow = length(chosen_spid), ncol = ncol(dat_rename$Zu) + ncol(X_full)) #fitted intercept+beta+lambda per species
 
 N = 20 #max no. of outer (column-update + row-update) iterations
 loglik = -Inf
@@ -162,22 +180,22 @@ for (iter in 1:N){
     #weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
     glmnet1 = glmnet(y = dat_rename$pt[dat_rename$spid == i]/dat_rename$wt[dat_rename$spid == i], x = X, intercept = TRUE, family = poisson(link = 'log'), weights = dat_rename$wt[dat_rename$spid == i], alpha = 0, lambda = ridgePen, maxit=nGlmnetIter) #penalty.factor = penalty_factor)
     
-    # store this species' intercept + beta (3 covariates) + lambda (50 loadings)
+    # store this species' intercept + beta (3 covariates) + lambda (43 loadings)
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
   }
   
   #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
   beta_lambda
   beta = beta_lambda[, 1:ncol(X_full)] #54 x 4
-  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #54 x 50
+  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #54 x 43
   
   #name lambda's rows by species id, so each row of dat_rename can look up its own species' loadings
   rownames(lambda) = as.matrix(chosen_spid)
-  lambda_rep = lambda[as.character(dat_rename$spid), ] #543323 x 50 - every row's own species' loadings
+  lambda_rep = lambda[as.character(dat_rename$spid), ] #543323 x 43 - every row's own species' loadings
   
   #row update: fit one shared spatial field (u), jointly, across all species/rows
   #elementwise product: each basis function scaled by that row's species' loading
-  X_joint = Z_star * lambda_rep #543323 x 50
+  X_joint = Z_star * lambda_rep #543323 x 43
   
   #fixed-effect linear predictor for every row, computed against every species at once
   offset_matrix = X_full%*%t(beta) #543323 x 54
@@ -191,11 +209,11 @@ for (iter in 1:N){
   
   new_u = as.numeric(glmnet1$beta)
     
-  u = new_u #50 x 1, updated shared spatial field coefficients
+  u = new_u #43 x 1, updated shared spatial field coefficients
   print(u)
   
   #rebuild Zu with updated u, for next iteration's column update
-  dat_rename$Zu = sweep(Z_star, 2, u, "*") #Z_star%*%u  #543323 x 50
+  dat_rename$Zu = sweep(Z_star, 2, u, "*") #Z_star%*%u  #543323 x 43
   #dat_rename$Zu = Z_star%*%u
   
   #convergence check - weighted Poisson-process log-likelihood kernel + Gaussian prior on u --- ##
@@ -221,9 +239,9 @@ load("grid_xy.RDATA")
 X_grid = model.matrix( ~tempann + rainann + rugged, data = grid_xy) #18277 x 4
 
 #evaluate basis functions at grid locations, using the same bfs as model fitting
-Z_grid = as.matrix(get.bf.matrix(bfs, grid_xy[, c("x", "y")])) #18277 x 60
+Z_grid = as.matrix(get.bf.matrix(m.lgcp_lp, grid_xy[, c("x", "y")])) #18277 x 43
 #nonzero_cols = colSums(Z_grid != 0, na.rm = TRUE) > 0
-Z_grid_star = Z_grid[, nonzero_cols, drop = FALSE] #18277 x 50
+Z_grid_star = Z_grid[, nonzero_cols, drop = FALSE] #18277 x 43
 
 #spatial term at grid locations, scaled by the fitted shared u
 Zu_grid = sweep(Z_grid_star, 2, u, "*")
@@ -296,10 +314,10 @@ domain.grid = subset(grid_xy, select = -z)
 #predict intensity values for this species at every grid cell
 domain.grid$z = grid_xy$z
 
-#parameter values - this species' own 50 basis-function loading
+#parameter values - this species' own 43 basis-function loading
 lambda_j = lambda[species_idx, ]
 
-#variance of the shared latent spatial field coefficients u (assumed common across all 50 basis functions)
+#variance of the shared latent spatial field coefficients u (assumed common across all 43 basis functions)
 var_u = var(u)
 
 #per-basis-function variance of this species' realised spatial contribution (u_k * lambda_jk):
@@ -342,7 +360,7 @@ po_sp_ppp = ppp(x = sp_presence_df$x,
 #observed inhomogeneous K-function for this species, using its fitted intensity surface
 glm1_mreg_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
 #simulate comparison point patterns from a log-Gaussian Cox process
-glm1_mreg_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = bfs$scale[1]))) #sqrt(3)*opt$minimum
+glm1_mreg_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1]))) #sqrt(3)*opt$minimum
 
 #produce graphs
 load("Kfunc.RDATA")
