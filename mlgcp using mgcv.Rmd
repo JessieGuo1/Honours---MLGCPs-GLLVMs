@@ -243,7 +243,6 @@ for (iter in 1:N){
                       paraPen=penalty_list_u,data=datXj,
                     control=gam.control(maxit=nGlmnetIter),start=u)
 
-    # store this species' intercept + beta (3 covariates) + lambda (43 loadings)
     new_u = coef(glmnet1) 
 
       
