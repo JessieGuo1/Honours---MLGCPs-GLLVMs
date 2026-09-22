@@ -261,7 +261,7 @@ intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label 
     tm_polygons(fill = "log_intensity",
                 fill.scale = tm_scale_continuous(
                   values = "turbo",
-                  #limits =  c(-8, 0),
+                  limits =  c(-8, 0),
                   outliers.trunc = c(TRUE, TRUE)),
                 col = NA,
                 fill.legend = tm_legend(title = "Log fitted intensity")) +

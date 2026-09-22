@@ -1,0 +1,146 @@
+---
+title: "lgcp Fitting glms"
+output: html_document
+date: "2026-08-12"
+editor_options: 
+  chunk_output_type: console
+---
+```{r glm}
+#Fitting GLM
+library(MASS)
+load("dat.RDATA")
+dat$pt = dat$presence
+dat$wt = ifelse(dat$presence == 1, 1e-6, dat$quad.size)
+Z = as.matrix(get.bf.matrix(m.lgcp_lp, dat[, c("x", "y")]))
+keep_cols = colSums(Z != 0) > 0 
+Z_star = Z[, keep_cols, drop = FALSE]
+#sum(!keep_cols)
+#sv = svd(Z)
+#tol = max(dim(Z))*max(sv$d)*.Machine$double.eps #deciding when a singular value is effectively zero.
+#r = sum(sv$d > tol) #number of singular values that are impactful
+#V_r = sv$v[, seq_len(r), drop = FALSE] #keep r independent directions
+#Z_star = Z%*%V_r #rotate original basis cols into r independent basis cols
+
+glm1 = glm.fit(y = dat$pt/dat$wt, x = cbind(1, dat$tempann, dat$rainann, dat$rugged, Z_star), intercept = FALSE, family = poisson(link = 'log'), weights = dat$wt)
+
+#glm1 = glm(pt/wt ~ tempann + rainann + rugged + Z_reduced, family = poisson(link = 'log'), data = dat, weights = wt)
+
+n = length(glm1$coefficients)
+beta = glm1$coefficients[1:(n - ncol(Z_star))] #Z_star
+u = glm1$coefficients[(n - ncol(Z_star) + 1):n] #Z_star
+
+#predict the fitted intensity at every grid cell
+X_grid = model.matrix( ~tempann + rainann + rugged, data = grid_xy)
+Z_grid = as.matrix(get.bf.matrix(m.lgcp_lp, grid_xy[, c("x", "y")])) #uses the bfs that m.lgcp_lp internally chose
+Z_grid_star = Z_grid[, keep_cols, drop = FALSE]
+
+#Z_grid_star = Z_grid%*%V_r
+grid_xy$z = exp(drop(X_grid%*%beta + Z_grid_star%*%u)) 
+
+grid_pred_proj = st_sf(intensity = grid_xy$z,
+                       log_intensity = log(grid_xy$z),
+                       geometry = grid_cells_proj) #simple feature obj, dataframe containing spatial geometries
+grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
+
+# Mapping according to vignette
+glm1_map = intensity_map(grid_pred_lonlat)
+print(glm1_map)
+
+# Calculate the observed, simulated K functions
+domain.grid = subset(grid_xy, select = -z)
+# predict intensity values
+domain.grid$z = grid_xy$z
+
+# parameter values
+var_u = var(u)
+vars <- rep(var_u, m.lgcp_lp$basis.per.res)
+var_smooth_grid <- drop(Z_grid^2 %*% vars) #Z_grid_star
+var_smooth = mean(var_smooth_grid)
+#var_smooth = var(drop(Z_grid%*%u)) #Z_grid_star
+domain.grid$mu = drop(X_grid%*%beta)
+fixed.im = as.im(domain.grid[, c("x", "y", "mu")], W = win)
+# create  pixel images
+pred.im = as.im(domain.grid[,c("x","y","z")], W = win)
+
+# simulate the envelopes/bounds
+glm1_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
+glm1_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1])))
+
+# Create Inhomogeneous K-func graphs
+glm1_kfunc = Kfunc(glm1_K_obs, glm1_K_env)
+```
+
+
+
+
+```{r penalised glm}
+#Fitting penalised glm
+
+library(glmnet)
+#penalty_factor <- c(
+#  rep(0, 3),  # do not penalise fixed effects
+  rep(1, ncol(Z))   # penalise spatial coefficients
+#)
+
+glm1_reg = glmnet(y = dat$pt/dat$wt, x = cbind(dat$tempann, dat$rainann, dat$rugged, Z_star), intercept = TRUE, family = poisson(link = 'log'), weights = dat$wt, alpha = 0, lambda = 1)#, penalty.factor = penalty_factor)
+
+coefs = coefficients(glm1_reg)
+n = length(coefs)
+beta = coefs[1:(n - ncol(Z_star))]
+u = coefs[(n - ncol(Z_star) + 1):n]
+
+#predict the fitted intensity at every grid cell
+grid_xy$z = exp(drop(X_grid%*%beta + Z_grid_star%*%u))
+#grid_xy$z = predict(glm1_reg, newx = grid_xy[, c("x", "y")], type = "response")
+
+grid_pred_proj = st_sf(intensity = grid_xy$z,
+                       log_intensity = log(grid_xy$z),
+                       geometry = grid_cells_proj) #simple feature obj, dataframe containing spatial geometries
+grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
+
+# Mapping according to vignette
+glm1_reg_map = intensity_map(grid_pred_lonlat)
+print(glm1_reg_map)
+
+domain.grid = subset(grid_xy, select = -z)
+# predict intensity values
+domain.grid$z = grid_xy$z
+
+# parameter values
+var_u = var(u)
+vars <- rep(var_u, m.lgcp_lp$basis.per.res)
+var_smooth_grid <- drop(Z_grid^2 %*% vars)
+var_smooth = mean(var_smooth_grid)
+#var_smooth = var(drop(Z_grid%*%u))
+
+domain.grid$mu = drop(X_grid%*%beta)
+fixed.im = as.im(domain.grid[, c("x", "y", "mu")], W = win)
+# create  pixel images
+pred.im = as.im(domain.grid[, c("x","y","z")], W = win)
+
+# simulate the envelopes/bounds
+glm1_reg_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
+glm1_reg_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1])))
+
+# Create Inhomogeneous K-func graphs
+glm1_reg_kfunc = Kfunc(glm1_reg_K_obs, glm1_reg_K_env)
+
+tmap_mode("plot")
+
+tmap_arrange(
+  gam_map,
+  scampr_map,
+  glm1_map,
+  glm1_reg_map,
+  nrow = 1
+)
+
+par(mfrow=c(1, 4))
+Kfunc(gam_K_obs, gam_K_env)
+Kfunc(scampr_K_obs, scampr_K_env)
+Kfunc(glm1_K_obs, glm1_K_env)
+Kfunc(glm1_reg_K_obs, glm1_reg_K_env)
+```
+
+glmmTMB for multispecies modelling
+use k = 7, 8, small for number of colsof Z 
