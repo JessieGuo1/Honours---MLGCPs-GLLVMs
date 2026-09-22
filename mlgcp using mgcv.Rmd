@@ -170,21 +170,26 @@ X_full = cbind(1, dat_rename$tempann, dat_rename$rainann, dat_rename$rugged) #54
 beta_lambda = matrix(NA,  nrow = length(chosen_spid), ncol = ncol(dat_rename$Zu) + ncol(X_full)) #fitted intercept+beta+lambda per species
 beta_lambda_old=rep(0,ncol(beta_lambda)) #initial values to pass to gam for first fit
 
-N = 20 #max no. of outer (column-update + row-update) iterations
+N = 4 #max no. of outer (column-update + row-update) iterations
 loglik = -Inf
 
 for (iter in 1:N){
   # column update: for each species, fit fixed effects + basis-function loadings (lambda)
+  Xbig=cbind(dat_rename$tempann, dat_rename$rainann, dat_rename$rugged, dat_rename$Zu)
   for (j in seq_along(chosen_spid)){ #full presence dataset containing all species
     i = chosen_spid[j]
     #design matrix - covariates + species' rows of spatial term (Zu)
-    X = cbind(dat_rename$tempann[dat_rename$spid == i], dat_rename$rainann[dat_rename$spid == i], dat_rename$rugged[dat_rename$spid == i], dat_rename$Zu[dat_rename$spid == i, ])
-  datX=data.frame(X=X) #I tihnk this is needed for gam to work
-  num_features = ncol(X)
+  #consider combining columns first then subsetting:
+#    X = cbind(dat_rename$tempann[dat_rename$spid == i], dat_rename$rainann[dat_rename$spid == i], dat_rename$rugged[dat_rename$spid == i], dat_rename$Zu[dat_rename$spid == i, ])
+#    X=Xbig[dat_rename$spid == i,]
+
+  datX=list(X=Xbig[dat_rename$spid==i,],pt=dat_rename$pt[dat_rename$spid==i],wt=dat_rename$wt[dat_rename$spid==i]) #weirdly, this needs to be a list for gam to work
+  num_features = ncol(Xbig)
 
   penalty_list <- list(
   X = list(
-    diag(num_features), # ridge penalty matrix #note we could set diags to 0 for fixed effects if we want
+    rank=num_features,
+    S=diag(num_features), # ridge penalty matrix #note we could set diags to 0 for fixed effects if we want
     sp = ridgePen             # fixes the ridge penalty (no auto-estimation)
   )
   )
@@ -195,7 +200,7 @@ for (iter in 1:N){
 #    beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
 
 # try fitting using gam
-    glmnet1=mgcv::gam(dat_rename$pt[dat_rename$spid == i]/dat_rename$wt[dat_rename$spid == i]~X,weights=dat_rename$wt[dat_rename$spid == i],family=poisson(),paraPen=penalty_list,data=datX,
+    glmnet1=mgcv::gam(pt/wt~X,weights=wt,family=poisson(),paraPen=penalty_list,data=datX,
                       control=gam.control(maxit=nGlmnetIter),start=beta_lambda_old)
 
     # store this species' intercept + beta (3 covariates) + lambda (43 loadings)
@@ -298,7 +303,7 @@ intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label 
     tm_polygons(fill = "log_intensity",
                 fill.scale = tm_scale_continuous(
                   values = "turbo",
-                  #limits =  c(-8, 0),
+                  limits =  c(-8, 0),
                   outliers.trunc = c(TRUE, TRUE)),
                 col = NA,
                 fill.legend = tm_legend(title = "Log fitted intensity")) +
