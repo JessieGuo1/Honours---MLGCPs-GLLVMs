@@ -8,7 +8,7 @@ date: "2026-03-18"
 #install.packages("gllvm")
 library(gllvm)
 #library(tidyverse)
-
+set.seed(0)
 data(microbialdata)
 microbial = data.frame(microbialdata)
 dim(microbial)
@@ -31,9 +31,9 @@ model_and_pred = function(Y, X, l.v.){
 glvm = function(Y, X, l.v., B){
   time = rep(NA, B)
   KL = rep(NA, B)
-  model_and_pred = model_and_pred(Y, X, l.v.)
+  model_pred = model_and_pred(Y, X, l.v.)
   for (i in 1:B){
-    sim_counts = simulate(model_and_pred$true_model, nsim = 1, conditional = TRUE)
+    sim_counts = simulate(model_pred$true_model, nsim = 1, conditional = TRUE)
     sim_counts = as.matrix(sim_counts)
     
     time_i = system.time({
@@ -41,7 +41,7 @@ glvm = function(Y, X, l.v., B){
     time[i] = as.numeric(time_i[3])
     pred_counts_i = predict(model_i, type = 'response', lv.pred = TRUE) #account for latent variable
     
-    KL.ij = model_and_pred$pred_counts*(log(model_and_pred$pred_counts/pred_counts_i)) - (model_and_pred$pred_counts - pred_counts_i) 
+    KL.ij = model_pred$pred_counts*(log(model_pred$pred_counts/pred_counts_i)) - (model_pred$pred_counts - pred_counts_i) 
     KL[i] = sum(KL.ij)
   }
 
@@ -51,7 +51,7 @@ glvm = function(Y, X, l.v., B){
   return(list(time = time, KL = KL, time_int = time_int, KL_int = KL_int))
 }
 
-model = glvm(microbial[, 1:200], Xenv[, 1:2], l.v. = 1, 10)
+model = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 5)
 model$time
 model$KL
 model$time_int
@@ -60,7 +60,7 @@ model$KL_int
 
 
 ```{r running gllvm 2 l.v.}
-model = glvm(microbial[, 1:200], Xenv[, 1:2], l.v. = 2, 10)
+model = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 5)
 model$time
 model$KL
 model$time_int
@@ -71,13 +71,17 @@ model$KL_int
 
 ```{r alternating glms using 1 l.v.}
 alt_glm = function(Y, X, l.v., B, u){
+  
+  Y = as.matrix(Y)
+  X = as.matrix(X)
+
   time = rep(NA, B)
   KL = rep(NA, B)
   ite_converge_all = rep(NA, B)
-  model_and_pred = model_and_pred(Y, X, l.v.)
+  model_pred = model_and_pred(Y, X, l.v.)
 
   for (k in 1:B){
-    sim_counts = simulate(model_and_pred$true_model, nsim = 1, conditional = TRUE)
+    sim_counts = simulate(model_pred$true_model, nsim = 1, conditional = TRUE)
     sim_counts = as.matrix(sim_counts)
     beta_lambda = matrix(NA, nrow = ncol(Y), ncol = 1 + ncol(X) + ncol(u)) #preset matrix of coefficients including betas and lambdas, nrow = no. of columns in the responses, no. of columns = beta0, beta1, beta2, lambda
     
@@ -100,7 +104,7 @@ alt_glm = function(Y, X, l.v., B, u){
         suppressWarnings(
         for (i in 1:nrow(sim_counts)){
           glm1 = glm.fit(y = as.numeric(sim_counts[i, ]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_X%*%t(beta))[i, ]) #invalid type without as.numeric
-          new_u[i] = glm1$coefficients 
+          new_u[i, ] = t(glm1$coefficients) 
         }
         )
         u = new_u #56 x 1
@@ -116,7 +120,7 @@ alt_glm = function(Y, X, l.v., B, u){
     ite_converge_all[k] = j
     time[k] = as.numeric(time_i[3])
     pred_counts_i = mu
-    KL.ij = model_and_pred$pred_counts*(log(model_and_pred$pred_counts/pred_counts_i)) - (model_and_pred$pred_counts - pred_counts_i) 
+    KL.ij = model_pred$pred_counts*(log(model_pred$pred_counts/pred_counts_i)) - (model_pred$pred_counts - pred_counts_i) 
     KL[k] = sum(KL.ij)
   }
   
@@ -125,7 +129,7 @@ alt_glm = function(Y, X, l.v., B, u){
   return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int))
 }
 
-model = alt_glm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 10, u = as.matrix(rnorm(56, 0, 1)))
+model = alt_glm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 5, u = as.matrix(rnorm(56, 0, 1)))
 model$time
 model$KL
 model$ite_converge_all
@@ -136,7 +140,7 @@ model$KL_int
 
 
 ```{r alternating glms using 2 l.v.}
-model = alt_glm(microbial[, 1:200], Xenv[, 1:2], l.v. = 2, 10, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
+model = alt_glm(microbial[, 1:200], Xenv[, 1:2], l.v. = 2, 5, mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
 model$time
 model$KL
 model$ite_converge_all
@@ -150,13 +154,17 @@ model$KL_int
 library(glmnet)
 
 pen_lam_glmnet = function(Y, X, l.v., B, u){
+  
+  Y = as.matrix(Y)
+  X = as.matrix(X)
+  
   time = rep(NA, B)
   KL = rep(NA, B)
   ite_converge_all = rep(NA, B)
-  model_and_pred = model_and_pred(Y, X, l.v.)
+  model_pred = model_and_pred(Y, X, l.v.)
 
   for (k in 1:B){
-    sim_counts = simulate(model_and_pred$true_model, nsim = 1, conditional = TRUE)
+    sim_counts = simulate(model_pred$true_model, nsim = 1, conditional = TRUE)
     sim_counts = as.matrix(sim_counts)
     beta_lambda = matrix(NA, nrow = ncol(Y), ncol = 1 + ncol(X) + ncol(u))
     
@@ -177,7 +185,7 @@ pen_lam_glmnet = function(Y, X, l.v., B, u){
         new_u = matrix(NA, nrow = nrow(Y), ncol = ncol(u)) #56 x 1
       
         for (i in 1:nrow(sim_counts)){
-          glmnet1 = glmnet(x = cbind(lambda, rep(0, length(lambda))), y = as.numeric(sim_counts[i, ]), intercept = FALSE, family = "poisson", offset = (new_X%*%t(beta))[i, ], alpha = 0, lambda = 1)
+          glmnet1 = glmnet(x = cbind(lambda, 0), y = as.numeric(sim_counts[i, ]), intercept = FALSE, family = "poisson", offset = (new_X%*%t(beta))[i, ], alpha = 0, lambda = 1)
           new_u[i, ] = t(as.numeric(glmnet1$beta)[1:ncol(lambda)])
         }
         u = new_u #56 x 1
@@ -192,7 +200,7 @@ pen_lam_glmnet = function(Y, X, l.v., B, u){
     ite_converge_all[k] = j
     time[k] = as.numeric(time_i[3])
     pred_counts_i = mu
-    KL.ij = model_and_pred$pred_counts*(log(model_and_pred$pred_counts/pred_counts_i)) - (model_and_pred$pred_counts - pred_counts_i) 
+    KL.ij = model_pred$pred_counts*(log(model_pred$pred_counts/pred_counts_i)) - (model_pred$pred_counts - pred_counts_i) 
     KL[k] = sum(KL.ij)
   }
   
@@ -201,7 +209,7 @@ pen_lam_glmnet = function(Y, X, l.v., B, u){
   return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int))
 }  
 
-model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 10, u = as.matrix(rnorm(56, 0, 1)))
+model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 5, u = as.matrix(rnorm(56, 0, 1)))
 model$time
 model$KL
 model$ite_converge_all
@@ -211,7 +219,7 @@ model$KL_int
 
 
 ```{r glmnet - penalty on u using 2 l.v.}
-model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 10, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
+model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 5, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
 model$time
 model$KL
 model$ite_converge_all
@@ -231,6 +239,10 @@ proc = function(y, c){
 }
 
 lv_chen = function(Y, X, l.v., B, K, u_all){
+  
+  Y = as.matrix(Y)
+  X = as.matrix(X)
+  
   time = rep(NA, B)
   KL = rep(NA, B)
   ite_converge_all = rep(NA, B)
@@ -365,7 +377,7 @@ lv_chen = function(Y, X, l.v., B, K, u_all){
   return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int, loglik_all = loglik_all, loglik_new_all = loglik_new_all))
 } 
 
-model = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 1, B = 10, K = 1, u_all = as.matrix(rnorm(56, 0, 1)))
+model = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 1, B = 5, K = 1, u_all = as.matrix(rnorm(56, 0, 1)))
 
 model$time
 model$KL

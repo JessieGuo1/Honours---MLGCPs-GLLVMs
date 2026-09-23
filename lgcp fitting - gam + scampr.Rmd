@@ -18,6 +18,7 @@ library(fields)
 library(tmap)
 library(grid)
 library(units)
+set.seed(0)
 
 #Preprocessing data
 all = disData("NSW")
@@ -199,7 +200,7 @@ grid_pred_proj = st_sf(intensity = grid_xy$z,
 grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
 
 # Mapping according to vignette
-intensity_map = function(grid_pred_lonlat){
+intensity_map = function(grid_pred_lonlat, title){
   map <- tm_shape(border_lonlat) + # create tmap object
     tm_polygons() + # add border
     tm_shape(grid_pred_lonlat) + # create tmap object for points to overlay
@@ -211,9 +212,9 @@ intensity_map = function(grid_pred_lonlat){
                 col = NA,
                 fill.legend = tm_legend(title = "Log fitted intensity")) +
     tm_shape(po_sp_lonlat) +
-    tm_dots(size = 0.2, fill = "red", shape = 4, alpha = 0.8, legend.show = FALSE) + # add the points
+    tm_dots(size = 0.2, fill = "red", shape = 4, fill_alpha = 0.8) + #, fill.legend = tm_legend_hide()) + # add the points
     tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
-    tm_layout(main.title = "Training data", main.title.position = "center") + # manage the layout
+    tm_title(title) + # manage the layout
     tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
             labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
   
@@ -226,8 +227,9 @@ intensity_map = function(grid_pred_lonlat){
 #    map,
 #    ncol = 2)
 }
-
-gam_map = intensity_map(grid_pred_lonlat)
+save(intensity_map, file = "intensity_map.RDATA")
+gam_map = intensity_map(grid_pred_lonlat, title = "gam")
+save(gam_map, file = "gam_map.RDATA")
 print(gam_map)
 
 # calculate the observed, simulated K functions -- distinguishes true small-scale clustering or inhibition from environmental gradients.
@@ -238,6 +240,8 @@ win = as.owin(st_sf(geometry = border_km))
 po_sp_ppp = ppp(x = presence_df$x,
                 y = presence_df$y,
                 window = win)
+save(po_sp_ppp, file = "po_sp_ppp.RDATA")
+
 plot(win)
 points(po_sp_ppp, pch = 1, col = "red", size = 0.8)
 
@@ -274,6 +278,12 @@ Kfunc = function(K_obs, K_env){
 }
 save(Kfunc, file = "Kfunc.RDATA")
 gam_kfunc = Kfunc(gam_K_obs, gam_K_env)
+
+mu = predict(m, newdata = dat, type = "response")
+
+#weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+loglik_new = sum(dat$wt * (dat$pt * log(mu) - mu))
+cat("loglik:", loglik_new)
 ```
 
 
@@ -340,6 +350,7 @@ m.lgcp_lp <- scampr(presence ~ tempann + rainann + rugged,
                     include.sre	= TRUE,
                     sre.approx = "laplace",
                     basis.functions = bfs)
+save(m.lgcp_lp, file = "m.lgcp_lp.RDATA")
 
 #predict the fitted intensity at every grid cell
 grid_xy$z = predict(m.lgcp_lp, newdata = grid_xy, type = "response")
@@ -350,7 +361,8 @@ grid_pred_proj = st_sf(intensity = grid_xy$z,
 grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
 
 # Mapping according to vignette
-scampr_map = intensity_map(grid_pred_lonlat)
+scampr_map = intensity_map(grid_pred_lonlat, title = "scampr")
+save(scampr_map, file = "scampr_map.RDATA")
 print(scampr_map)
 
 #ERROR
@@ -380,4 +392,10 @@ scampr_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(mo
 
 # Create Inhomogeneous K-func graphs
 scampr_kfunc = Kfunc(scampr_K_obs, scampr_K_env)
+
+mu = predict(m, newdata = dat, type = "response")
+
+#weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+loglik_new = sum(dat$wt * (dat$pt * log(mu) - mu))
+cat("loglik:", loglik_new)
 ```
