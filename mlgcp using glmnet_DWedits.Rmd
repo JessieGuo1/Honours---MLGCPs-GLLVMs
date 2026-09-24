@@ -145,7 +145,7 @@ Z = as.matrix(get.bf.matrix(m.lgcp_lp, dat[, c("x", "y")]))
 #drop basis functions with zero support - pruned basis functions
 nonzero_cols = colSums(Z != 0, na.rm = TRUE) > 0
 Z_star = Z[, nonzero_cols, drop = FALSE] #543323 x 43
-Z_star = Z_star/max(apply(Z_star,2,sd))
+#Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
 ```
 
 
