@@ -140,7 +140,7 @@ m.lgcp_lp <- scampr(presence ~ tempann + rainann + rugged,
                     basis.functions = bfs)
 
 #evaluate basis functions at every data point
-Z = as.matrix(get.bf.matrix(m.lgcp_lp, dat[, c("x", "y")]))
+Z = get.bf.matrix(m.lgcp_lp, dat[, c("x", "y")])
 
 #drop basis functions with zero support - pruned basis functions
 nonzero_cols = colSums(Z != 0, na.rm = TRUE) > 0
@@ -150,7 +150,7 @@ Z_star = Z[, nonzero_cols, drop = FALSE] #543323 x 43
 
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor}
-ridgePen=0.01 #penalty strength
+ridgePen=1 #penalty strength
 nGlmnetIter=20 #max iterations glmnet allowed
 
 ### standardise X's up here to variance of one ###
@@ -161,80 +161,93 @@ u = rnorm(ncol(Z_star), 0, 1)
 #rename spid, attach Zu = each basis function's column scaled by u[k]
 #(elementwise scaling via sweep - keeps all 50 basis functions SEPARATE, so column-update step can estimate full 50-length loading vector per species)
 dat_rename = dat %>% 
-  mutate(spid = as.numeric(str_extract(spid, "\\d+"))) %>% 
-#  mutate(Zu = sweep(Z_star, 2, u, "*"))
-  mutate(Zu = Z_star%*%u)
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+#  mutate(Zu = sweep(Z_star, 2, u, "*"))#
+#  
 
-chosen_spid = unique(dat_rename$spid)
+attach(dat_rename)
+Zu = Z_star%*%u
+Zu = as.numeric(Zu)
+chosen_spid = unique(spid)
 n_species = length(chosen_spid)
 
-X_full = cbind(1, dat_rename$tempann, dat_rename$rainann, dat_rename$rugged) #543323 x 4, fixed-effect design matrix
-beta_lambda = matrix(NA,  nrow = length(chosen_spid), ncol = ncol(dat_rename$Zu) + ncol(X_full)) #fitted intercept+beta+lambda per species
+X_full = cbind(1, tempann, rainann, rugged) #543323 x 4, fixed-effect design matrix
+
+X_Zu = cbind(tempann, rainann, rugged, Zu)
+beta_lambda = matrix(NA,  nrow = length(chosen_spid), ncol = ncol(as.matrix(Zu)) + ncol(X_full)) #fitted intercept+beta+lambda per species
+
+rows_by_species = split(seq_len(nrow(dat_rename)), spid)
+species_idx_row = match(spid, chosen_spid) #543323 x 1
 
 N = 20 #max no. of outer (column-update + row-update) iterations
 loglik = -Inf
+warm_start = list(a0 = 0, beta = matrix(rep(0, ncol(X_Zu))))
 
 for (iter in 1:N){
   # column update: for each species, fit fixed effects + basis-function loadings (lambda)
+  Zu = as.numeric(Z_star%*%u)
+  X_Zu = cbind(tempann, rainann, rugged, Zu)
+
   for (j in seq_along(chosen_spid)){ #full presence dataset containing all species
     i = chosen_spid[j]
+    idx = rows_by_species[[as.character(i)]]
     #design matrix - covariates + species' rows of spatial term (Zu)
 #    X = cbind(dat_rename$tempann[dat_rename$spid == i]/25, dat_rename$rainann[dat_rename$spid == i]/320, dat_rename$rugged[dat_rename$spid == i]/29, dat_rename$Zu[dat_rename$spid == i, ])
-    X = cbind(1,dat_rename$tempann[dat_rename$spid == i], dat_rename$rainann[dat_rename$spid == i], dat_rename$rugged[dat_rename$spid == i], dat_rename$Zu[dat_rename$spid == i, ])
+
+    X_i = X_Zu[idx, ]
     
     #weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
 #    glmnet1 = glmnet(y = dat_rename$pt[dat_rename$spid == i]/dat_rename$wt[dat_rename$spid == i], x = X, intercept = TRUE, family = poisson(link = 'log'), weights = dat_rename$wt[dat_rename$spid == i], alpha = 0, lambda = ridgePen, maxit=nGlmnetIter, standardize=FALSE) #penalty.factor = penalty_factor)
-    glmnet1 = glm.fit(y = dat_rename$pt[dat_rename$spid == i]/dat_rename$wt[dat_rename$spid == i], x = X, family = poisson(link = 'log'), weights = dat_rename$wt[dat_rename$spid == i]) #penalty.factor = penalty_factor)
+
+    glmnet1 = glmnet:::glmnet.fit(y = pt[idx]/wt[idx], x = X_i, family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, warm = warm_start, alpha = 0, lambda = ridgePen)#, maxit = nGlmnetIter) #penalty.factor = penalty_factor)
     
-    # store this species' intercept + beta (3 covariates) + lambda (43 loadings)
-#    beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
-    beta_lambda[j, ] = coef(glmnet1) 
+    # store this species' intercept + beta (3 covariates) + lambda (1 loading)
+    beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
+#    beta_lambda[j, ] = coef(glmnet1) 
+    warm_start = list(a0 = beta_lambda[j, 1], beta = beta_lambda[j, 2:(ncol(X_Zu) + 1)])
+
   }
 
   #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
   beta_lambda
   beta = beta_lambda[, 1:ncol(X_full)] #54 x 4
-  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #54 x 43
-  
-  #name lambda's rows by species id, so each row of dat_rename can look up its own species' loadings
-  rownames(lambda) = as.matrix(chosen_spid)
-  lambda_rep = lambda[as.character(dat_rename$spid), ] #543323 x 43 - every row's own species' loadings
+  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #54 x 1
   
   #row update: fit one shared spatial field (u), jointly, across all species/rows
   #elementwise product: each basis function scaled by that row's species' loading
-  X_joint = Z_star * lambda_rep #543323 x 43
+  lambda_rep = lambda[species_idx_row, , drop = TRUE]
+  X_joint = Z_star * lambda_rep #543323 x 1, lambda expanded to the length of all locations
   
   #fixed-effect linear predictor for every row, computed against every species at once
-  offset_matrix = X_full%*%t(beta) #543323 x 54
+  #offset_matrix = X_full%*%t(beta) #543323 x 54
   
   #for each row, pick the column matching that row's own species -- only one of the 54 hypothetical 'predictions' in offset_matrix is the right one 
-  species_col_idx = match(dat_rename$spid, chosen_spid) #543323 x 1
-  offset = offset_matrix[cbind(seq_len(nrow(dat_rename)), species_col_idx)] #543323 x 1: matrix indexing -- pick one value per row; returns 543323 values = offset_matrix[row_idx, col_idx], e.g. offset_matrix[27, 2] to match each row's (dat_rename) true species label back to the correct column
-    
+  offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE]) #543323 x 1: matrix indexing -- pick one value per row; returns 543323 values = offset_matrix[row_idx, col_idx], e.g. offset_matrix[27, 2] to match each row's (dat_rename) true species label back to the correct column
+
   #fit shared u via one joint ridge regression across all rows/species at once
 #  glmnet1 = glmnet(x = X_joint, y = dat_rename$pt/dat_rename$wt, intercept = FALSE, family=poisson(link='log'), weights = dat_rename$wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, maxit=nGlmnetIter, standardize=FALSE) 
-  glmnet1 = glm.fit(x = X_joint, y = dat_rename$pt/dat_rename$wt, family=poisson(link='log'), weights = dat_rename$wt, offset = as.numeric(offset)) 
+  glmnet1 = glmnet:::glmnet.fit(x = X_joint, y = pt/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen) 
   
-#  new_u = as.numeric(glmnet1$beta)
-  new_u = coef(glmnet1)
+  new_u = as.numeric(glmnet1$beta)
+#  new_u = coef(glmnet1)
     
   u = new_u #43 x 1, updated shared spatial field coefficients
   print(u)
   
   #rebuild Zu with updated u, for next iteration's column update
 #  dat_rename$Zu = sweep(Z_star, 2, u, "*") #Z_star%*%u  #543323 x 43
-  dat_rename$Zu = Z_star%*%u
+  Zu = Z_star%*%u
   
   #convergence check - weighted Poisson-process log-likelihood kernel + Gaussian prior on u --- ##
   eta = offset + (Z_star * lambda_rep) %*% u #543323 x 1, per-row linear predictor (fixed + spatial)
   mu = exp(eta)
   
   #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-  loglik_new = sum(dat_rename$wt * (dat_rename$pt * log(mu) - mu))
+  loglik_new = sum(wt * (pt * log(mu) - mu))
   cat("iter", iter, "loglik:", loglik_new, "\n")
   
   #stop once relative change in log-likelihood is small
-  if(abs((loglik_new - loglik)/loglik_new) < 1e-6) break
+  if (is.finite(loglik) && abs(loglik_new - loglik)/ max(1, abs(loglik_new)) < 1e-6) break
   loglik = loglik_new}
 
 ```
@@ -248,7 +261,7 @@ load("grid_xy.RDATA")
 X_grid = model.matrix( ~tempann + rainann + rugged, data = grid_xy) #18277 x 4
 
 #evaluate basis functions at grid locations, using the same bfs as model fitting
-Z_grid = as.matrix(get.bf.matrix(m.lgcp_lp, grid_xy[, c("x", "y")])) #18277 x 43
+Z_grid = get.bf.matrix(m.lgcp_lp, grid_xy[, c("x", "y")]) #18277 x 43
 #nonzero_cols = colSums(Z_grid != 0, na.rm = TRUE) > 0
 Z_grid_star = Z_grid[, nonzero_cols, drop = FALSE] #18277 x 43
 
