@@ -47,6 +47,8 @@ border_lonlat = disBorder("NSW")
 
 #project presence points
 po_sp_lonlat = st_as_sf(po_sp, coords = c("x", "y"), crs = 4326, remove = FALSE) #convert to sf object, remove = FALSE keeps x, y
+save(po_sp_lonlat, file = "po_sp_lonlat.RDATA")
+
 bg_lonlat = st_as_sf(bg, coords = c("x", "y"), crs = 4326, remove = FALSE)
 
 target_crs = 3577 # Australian Albers, coordinates in metres
@@ -86,6 +88,7 @@ map_po <- tm_shape(border_proj) + # create tmap object
 
 covar_names = c("cti", "disturb", "mi", "rainann", "raindq", "rugged",
                 "soildepth", "soilfert", "solrad", "tempann", "tempmin", "topo", "vegsys")
+cont_vars <- setdiff(covar_names, "vegsys")
 
 po_keep = complete.cases(po_model[, covar_names])
 bg_keep = complete.cases(bg_model[, covar_names])
@@ -94,14 +97,13 @@ po_sp_lonlat = po_sp_lonlat[po_keep, ]
 bg_lonlat = bg_lonlat[bg_keep, ]
 
 domain_area_km2 <- as.numeric(set_units(sum(st_area(border_proj)), km^2))
+quad_wt <- domain_area_km2 / nrow(bg_model) #quadrature weights
 
 #win = as.owin(border_sf) #st_sfc holds list of geometry objects --> observation window, NA_crs_ strip coordinate reference system
 ```
 
 
 ```{r gam}
-quad_wt <- domain_area_km2 / nrow(bg_model) #quadrature weights
-
 #processed dataframes
 presence_df = data.frame(
   x = po_model$x, y = po_model$y,
@@ -121,7 +123,6 @@ dat = rbind(presence_df, quad)
 dat$vegsys <- factor(dat$vegsys)
 
 #scale
-cont_vars <- setdiff(covar_names, "vegsys")
 dat_scaled = scale(dat[, cont_vars])
 centers = attr(dat_scaled, "scaled:center")
 scales  = attr(dat_scaled, "scaled:scale")
@@ -154,6 +155,7 @@ load("opt.RDATA")
 #log-Gaussian Cox process
 f2 <- update(f1, ~. +  s(x, y, bs = "gp", k = 5, m = c(3, opt$minimum)))
 m <- gam(f2, data = dat, family = poisson(),  weights = wt, method = "REML")
+pred_gam = predict(m, newdata = dat, type = "response")
 
 # create grid 
 grid_cells_proj = st_make_grid(
@@ -279,10 +281,8 @@ Kfunc = function(K_obs, K_env){
 save(Kfunc, file = "Kfunc.RDATA")
 gam_kfunc = Kfunc(gam_K_obs, gam_K_env)
 
-mu = predict(m, newdata = dat, type = "response")
-
 #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-loglik_new = sum(dat$wt * (dat$pt * log(mu) - mu))
+loglik_new_gam = sum(dat$pt * log(mu) - dat$wt * mu)
 cat("loglik:", loglik_new)
 ```
 
@@ -351,16 +351,20 @@ m.lgcp_lp <- scampr(presence ~ tempann + rainann + rugged,
                     sre.approx = "laplace",
                     basis.functions = bfs)
 save(m.lgcp_lp, file = "m.lgcp_lp.RDATA")
+pred_scampr = predict(m.lgcp_lp, newdata = dat, type = "response")
 
 #predict the fitted intensity at every grid cell
+load("grid_xy.RDATA")
 grid_xy$z = predict(m.lgcp_lp, newdata = grid_xy, type = "response")
 
+load("grid_cells_proj.RDATA")
 grid_pred_proj = st_sf(intensity = grid_xy$z,
                        log_intensity = log(grid_xy$z),
                        geometry = grid_cells_proj) #simple feature obj, dataframe containing spatial geometries
 grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
 
 # Mapping according to vignette
+load("intensity_map.RDATA")
 scampr_map = intensity_map(grid_pred_lonlat, title = "scampr")
 save(scampr_map, file = "scampr_map.RDATA")
 print(scampr_map)
@@ -393,9 +397,7 @@ scampr_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(mo
 # Create Inhomogeneous K-func graphs
 scampr_kfunc = Kfunc(scampr_K_obs, scampr_K_env)
 
-mu = predict(m, newdata = dat, type = "response")
-
 #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-loglik_new = sum(dat$wt * (dat$pt * log(mu) - mu))
+loglik_new_scampr = sum(dat$presence * log(mu) - dat$quad.size * mu)
 cat("loglik:", loglik_new)
 ```

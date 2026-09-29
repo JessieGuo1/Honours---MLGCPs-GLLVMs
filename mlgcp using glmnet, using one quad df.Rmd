@@ -92,15 +92,9 @@ m = length(species) #no. of species
 q <- nrow(quad) #no. of quadrature points
 quad$spid <- rep(NA, q) #label each replicate block with its species id
 
-#replicate background points once per species for multi-species scheme)
-quad_rep = quad[rep(seq_len(q), m), ]
-quad_rep$spid <- rep(species, each = q) #label each replicate block with its species id
-
 #combine presence, quadrature rows into long-format dataframe
 dat <- rbind(presence_df, quad)
 n <- nrow(dat)
-
-dat_rep = rbind(presence_df, quad_rep)
 
 #pt/wt - standard DWPR (down-weighted Poisson regression) construction
 #pt = 1 - presence rows, 0 - quadrature rows
@@ -108,8 +102,6 @@ dat_rep = rbind(presence_df, quad_rep)
 dat$pt = dat$presence
 dat$wt = ifelse(dat$presence == 1, 1e-6, dat$quad.size)
 
-dat_rep$pt = dat_rep$presence
-dat_rep$wt = ifelse(dat_rep$presence == 1, 1e-6, dat_rep$quad.size)
 ```
 
 
@@ -117,6 +109,14 @@ dat_rep$wt = ifelse(dat_rep$presence == 1, 1e-6, dat_rep$quad.size)
 cont_vars <- setdiff(covar_names, "vegsys")
 dat_scaled = scale(dat[, cont_vars])
 dat[, cont_vars] = as.data.frame(dat_scaled) 
+
+#replicate background points once per species for multi-species scheme)
+quad_scaled = dat[dat$pt == 0, ]
+quad_rep = quad_scaled[rep(seq_len(q), m), ]
+quad_rep$spid <- rep(species, each = q) #label each replicate block with its species id
+
+pres_scaled = dat[dat$pt == 1, ]
+dat_rep = rbind(pres_scaled, quad_rep)
 ```
 
 
@@ -157,12 +157,13 @@ quad_rows = nrow(presence_df) + seq_len(nrow(quad))
 Z_pres = Z_star[pres_rows, , drop = FALSE]
 Z_quad = Z_star[quad_rows, , drop = FALSE]
 
+n_species = length(species)
 Z_quad_rep = Z_quad[rep(seq_len(nrow(Z_quad)), n_species), , drop = FALSE]
 Z_row = rbind(Z_pres, Z_quad_rep)
 ```
 
 
-```{r Fitting - alternating column/row updates (single latent spatial factor}
+```{r Fitting - alternating column/row updates (single latent spatial factor, setting nGlmnetIter for smaller values does produce coefficients}
 
 ridgePen=1 #penalty strength
 nGlmnetIter=20 #max iterations glmnet allowed
@@ -181,8 +182,8 @@ dat_rename = dat_rep %>%
 
 pres_spid = as.numeric(str_extract(presence_df$spid, "\\d+"))
 
-#attach(dat_rename)
-attach(presence_df)
+attach(dat_rename)
+#attach(dat)
 
 #Zu = Z_star%*%u
 Z_pres_u = Z_pres %*% u 
@@ -190,19 +191,17 @@ Z_quad_u = Z_quad %*% u
 
 #Zu = as.numeric(Zu)
 chosen_spid = unique(pres_spid)
-n_species = length(chosen_spid)
 
 X_full = cbind(1, dat_rename$tempann, dat_rename$rainann, dat_rename$rugged) #543323 x 4, fixed-effect design matrix
 
-X_pres_full = cbind(1, tempann, rainann, rugged)
-X_quad_full = cbind(1, quad$tempann, quad$rainann, quad$rugged)
+X_pres_full = cbind(1, pres_scaled$tempann, pres_scaled$rainann, pres_scaled$rugged)
+X_quad_full = cbind(1, quad_scaled$tempann, quad_scaled$rainann, quad_scaled$rugged)
 
 #X_Zu = cbind(tempann, rainann, rugged, Zu)
-X_pres_Zu = cbind(presence_df$tempann, presence_df$rainann, presence_df$rugged, Z_pres_u)
-X_quad_Zu = cbind(quad$tempann, quad$rainann, quad$rugged, Z_quad_u)
-X_pres_Zu = as.matrix(X_pres_Zu)
-X_quad_Zu = as.matrix(X_quad_Zu)
-beta_lambda = matrix(0,  nrow = n_species, ncol = ncol(as.matrix(Z_pres_u)) + ncol(X_pres_full)) #fitted intercept+beta+lambda per species
+X_pres_Zu = cbind(X_pres_full[, -1], Z_pres_u)
+X_quad_Zu = cbind(X_quad_full[, -1], Z_quad_u)
+
+beta_lambda = matrix(0,  nrow = n_species, ncol = ncol(Z_pres_u) + ncol(X_pres_full)) #fitted intercept+beta+lambda per species
 
 #rows_by_species = split(seq_len(nrow(dat_rename)), spid)
 species_idx_row = match(dat_rename$spid, chosen_spid) #543323 x 1
@@ -215,6 +214,8 @@ warm_start = vector("list", n_species)
 
 for (iter in 1:N){
   # column update: for each species, fit fixed effects + basis-function loadings (lambda)
+  X_pres_Zu = cbind(X_pres_full[, -1], Z_pres_u)
+  X_quad_Zu = cbind(X_quad_full[, -1], Z_quad_u)
 
   for (j in seq_along(chosen_spid)){ #full presence dataset containing all species
     i = chosen_spid[j]
@@ -225,11 +226,12 @@ for (iter in 1:N){
 
     #X_i = as.matrix(X_Zu[idx, ])
     
-    X_i = rbind(X_pres_Zu[idx, ], X_quad_Zu)
-    y_i = c(dat$pt[idx]/dat$wt[idx], rep(0, nrow(quad)))
+    X_i = as.matrix(rbind(X_pres_Zu[idx, ], X_quad_Zu))
+
+    y_i = c(dat$pt[idx]/dat$wt[idx], rep(0, nrow(quad_scaled)))
     #weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
 #    glmnet1 = glmnet(y = dat_rename$pt[dat_rename$spid == i]/dat_rename$wt[dat_rename$spid == i], x = X, intercept = TRUE, family = poisson(link = 'log'), weights = dat_rename$wt[dat_rename$spid == i], alpha = 0, lambda = ridgePen, maxit=nGlmnetIter, standardize=FALSE) #penalty.factor = penalty_factor)
-    w_i = c(dat$wt[idx], quad$quad.size)
+    w_i = c(dat$wt[idx], quad_scaled$quad.size)
     
     glmnet1 = glmnet:::glmnet.fit(y = y_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen)#, maxit = nGlmnetIter) #penalty.factor = penalty_factor)
     
@@ -248,7 +250,8 @@ for (iter in 1:N){
   #elementwise product: each basis function scaled by that row's species' loading
   lambda_rep = lambda[species_idx_row, , drop = TRUE]
   X_joint = Z_row * lambda_rep #543323 x k, lambda expanded to the length of all locations
-  
+  attr(X_joint, "xm") = rep(0, ncol(X_joint))
+  attr(X_joint, "xs") = rep(1, ncol(X_joint))
   #fixed-effect linear predictor for every row, computed against every species at once
   #offset_matrix = X_full%*%t(beta) #543323 x 54
   
@@ -260,7 +263,7 @@ for (iter in 1:N){
   offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
   #fit shared u via one joint ridge regression across all rows/species at once
 #  glmnet1 = glmnet(x = X_joint, y = dat_rename$pt/dat_rename$wt, intercept = FALSE, family=poisson(link='log'), weights = dat_rename$wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, maxit=nGlmnetIter, standardize=FALSE) 
-  glmnet1 = glmnet:::glmnet.fit(x = X_joint, y = dat_rename$pt/dat_rename$wt, intercept = FALSE, family=poisson(link='log'), weights = dat_rename$wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u))) 
+  glmnet1 = glmnet:::glmnet.fit(x = X_joint, y = pt/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)))#, maxit = nGlmnetIter) 
   
   new_u = as.numeric(glmnet1$beta)
 #  new_u = coef(glmnet1)
@@ -272,13 +275,14 @@ for (iter in 1:N){
 #  dat_rename$Zu = sweep(Z_star, 2, u, "*") #Z_star%*%u  #543323 x 43
   #Zu = Z_star%*%u
   Z_pres_u = Z_pres %*% u 
-
+  Z_quad_u = Z_quad %*% u
+  
   #convergence check - weighted Poisson-process log-likelihood kernel + Gaussian prior on u --- ##
   eta = offset + (Z_row * lambda_rep) %*% u #543323 x 1, per-row linear predictor (fixed + spatial)
   mu = exp(eta)
   
   #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-  loglik_new = sum(dat_rename$pt * log(mu) - dat_rename$wt * mu)
+  loglik_new = sum(pt * log(mu) - wt * mu)
   cat("iter", iter, "loglik:", loglik_new, "\n")
   
   #stop once relative change in log-likelihood is small
@@ -376,14 +380,14 @@ domain.grid$z = grid_xy$z
 lambda_j = lambda[species_idx, ]
 
 #variance of the shared latent spatial field coefficients u (assumed common across all 43 basis functions)
-var_u = var(u)
+var_u = 1/ridgePen
 
 #per-basis-function variance of this species' realised spatial contribution (u_k * lambda_jk):
 #Var(u_k * lambda_jk) = lambda_jk^2 * Var(u_k), lambda_jk fixed, known
-vars <- var_u * lambda_j^2
+vars <- rep(var_u, m.lgcp_lp$basis.per.res)
 
 #propagate variance through basis functions at every grid location - Var(sum_k Z_k(loc) * u_k * lambda_jk) = sum_k Z_k(loc)^2 * Var(u_k * lambda_jk)
-var_smooth_grid <- drop(Z_grid_star^2 %*% vars) 
+var_smooth_grid <- drop((Z_grid_star * lambda_j)^2 %*% vars)
 
 #average propagated variance
 var_smooth = mean(var_smooth_grid)
