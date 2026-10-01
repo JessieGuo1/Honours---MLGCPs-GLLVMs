@@ -212,7 +212,7 @@ N = 20 #max no. of outer (column-update + row-update) iterations
 loglik = -Inf
 warm_start = vector("list", n_species)
 
-for (iter in 1:N){
+time_i = system.time({for (iter in 1:N){
   # column update: for each species, fit fixed effects + basis-function loadings (lambda)
   X_pres_Zu = cbind(X_pres_full[, -1], Z_pres_u)
   X_quad_Zu = cbind(X_quad_full[, -1], Z_quad_u)
@@ -280,15 +280,19 @@ for (iter in 1:N){
   #convergence check - weighted Poisson-process log-likelihood kernel + Gaussian prior on u --- ##
   eta = offset + (Z_row * lambda_rep) %*% u #543323 x 1, per-row linear predictor (fixed + spatial)
   mu = exp(eta)
+  pred_mglmnet_oneq = mu
   
   #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-  loglik_new = sum(pt * log(mu) - wt * mu)
-  cat("iter", iter, "loglik:", loglik_new, "\n")
+  loglik_new_mglmnet_oneq = sum(pt * log(mu) - wt * mu)
+  cat("iter", iter, "loglik:", loglik_new_mglmnet_oneq, "\n")
   
   #stop once relative change in log-likelihood is small
-  if (is.finite(loglik) && abs(loglik_new - loglik)/ max(1, abs(loglik_new)) < 1e-6) break
-  loglik = loglik_new}
+  if (is.finite(loglik) && abs(loglik_new_mglmnet_oneq - loglik)/ max(1, abs(loglik_new_mglmnet_oneq)) < 1e-6) break
+  loglik = loglik_new_mglmnet_oneq}
+})
 
+time_mglmnet_oneq = as.numeric(time_i[3])
+time_mglmnet_oneq
 ```
 
 
@@ -316,33 +320,7 @@ z_matrix = exp(X_grid%*%t(beta) + Zu_grid%*%t(lambda))
 grid_xy$z = z_matrix[, species_idx]
 
 #builds intensity map - study region border + fitted intensity surface + this species' presence points
-intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label = ""){
-  map <- tm_shape(border_lonlat) + # create tmap object
-    tm_polygons() + # add the border
-    tm_shape(grid_pred_lonlat) + # create tmap object for the points to overlay
-    tm_polygons(fill = "log_intensity",
-                fill.scale = tm_scale_continuous(
-                  values = "turbo",
-#                  limits =  c(-8, 0),
-                  outliers.trunc = c(TRUE, TRUE)),
-                col = NA,
-                fill.legend = tm_legend(title = "Log fitted intensity")) +
-    tm_shape(species_points_lonlat) +
-    tm_dots(size = 0.2, fill = "red", shape = 4, fill_alpha = 0.8) + # add the points
-    tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
-    tm_title(paste("Mglmnet Species: ", species_label)) + # manage the layout
-    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
-            labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
-  
-#  graphics.off()          # close corrupted/open graphics devices
-#  tmap_mode("plot")       # ensure static plotting mode
-#  print(map)
-  
-#  tmap_arrange(
-#    map_po,
-#    map,
-#    ncol = 2)
-}
+load("m_intensity_map.RDATA")  
 
 #spatial polygons matching grid_xy locations
 load("grid_cells_proj.RDATA") 
@@ -361,8 +339,8 @@ species_points_metres$y = species_points$y * 1000
 species_points_sf = st_as_sf(species_points_metres, coords = c("x", "y"), crs = target_crs)
 species_points_lonlat = st_transform(species_points_sf, crs = 4326)
 
-glm_mreg_map = intensity_map(grid_pred_lonlat, species_points_lonlat, species_label = 9)
-print(glm_mreg_map)
+glmnet_m_oneq_map = m_intensity_map(grid_pred_lonlat, species_points_lonlat, species_label = 9)
+print(glmnet_m_oneq_map)
 ```
 
 
@@ -420,12 +398,12 @@ po_sp_ppp = ppp(x = sp_presence_df$x,
 #load("opt.RDATA")
 
 #observed inhomogeneous K-function for this species, using its fitted intensity surface
-glm1_mreg_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
+glmnet_m_oneq_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
 #simulate comparison point patterns from a log-Gaussian Cox process
-glm1_mreg_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1]))) #sqrt(3)*opt$minimum
+glmnet_m_oneq_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1]))) #sqrt(3)*opt$minimum
 
 #produce graphs
 load("Kfunc.RDATA")
-glm1_kfunc = Kfunc(glm1_mreg_K_obs, glm1_mreg_K_env)
+glmnet_m_oneq_kfunc = Kfunc(glmnet_m_oneq_K_obs, glmnet_m_oneq_K_env)
 ```
 

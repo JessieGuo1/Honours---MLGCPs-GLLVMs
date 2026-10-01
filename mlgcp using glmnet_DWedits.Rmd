@@ -185,7 +185,7 @@ N = 20 #max no. of outer (column-update + row-update) iterations
 loglik = -Inf
 warm_start = vector("list", n_species)
 
-for (iter in 1:N){
+time_i = system.time({for (iter in 1:N){
   # column update: for each species, fit fixed effects + basis-function loadings (lambda)
   X_Zu = cbind(tempann, rainann, rugged, Zu)
 
@@ -252,7 +252,10 @@ for (iter in 1:N){
   #stop once relative change in log-likelihood is small
   if (is.finite(loglik) && abs(loglik_new_mglmnet - loglik)/ max(1, abs(loglik_new_mglmnet)) < 1e-6) break
   loglik = loglik_new_mglmnet}
+})
 
+time_mglmnet = as.numeric(time_i[3])
+time_mglmnet
 ```
 
 
@@ -280,14 +283,14 @@ z_matrix = exp(X_grid%*%t(beta) + Zu_grid%*%t(lambda))
 grid_xy$z = z_matrix[, species_idx]
 
 #builds intensity map - study region border + fitted intensity surface + this species' presence points
-intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label = ""){
+m_intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label = ""){
   map <- tm_shape(border_lonlat) + # create tmap object
     tm_polygons() + # add the border
     tm_shape(grid_pred_lonlat) + # create tmap object for the points to overlay
     tm_polygons(fill = "log_intensity",
                 fill.scale = tm_scale_continuous(
                   values = "turbo",
-#                  limits =  c(-8, 0),
+                  limits =  c(-8, 0),
                   outliers.trunc = c(TRUE, TRUE)),
                 col = NA,
                 fill.legend = tm_legend(title = "Log fitted intensity")) +
@@ -297,7 +300,7 @@ intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label 
     tm_title(paste("Mglmnet Species: ", species_label)) + # manage the layout
     tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
             labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
-  
+
 #  graphics.off()          # close corrupted/open graphics devices
 #  tmap_mode("plot")       # ensure static plotting mode
 #  print(map)
@@ -307,6 +310,7 @@ intensity_map = function(grid_pred_lonlat, species_points_lonlat, species_label 
 #    map,
 #    ncol = 2)
 }
+save(m_intensity_map, file = "m_intensity_map.RDATA") 
 
 #spatial polygons matching grid_xy locations
 load("grid_cells_proj.RDATA") 
@@ -325,8 +329,8 @@ species_points_metres$y = species_points$y * 1000
 species_points_sf = st_as_sf(species_points_metres, coords = c("x", "y"), crs = target_crs)
 species_points_lonlat = st_transform(species_points_sf, crs = 4326)
 
-glm_mreg_map = intensity_map(grid_pred_lonlat, species_points_lonlat, species_label = 9)
-print(glm_mreg_map)
+glmnet_m_map = m_intensity_map(grid_pred_lonlat, species_points_lonlat, species_label = 9)
+print(glmnet_m_map)
 ```
 
 
