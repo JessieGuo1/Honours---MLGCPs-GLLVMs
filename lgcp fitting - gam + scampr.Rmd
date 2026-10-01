@@ -283,7 +283,7 @@ gam_kfunc = Kfunc(gam_K_obs, gam_K_env)
 
 #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
 loglik_new_gam = sum(dat$pt * log(mu) - dat$wt * mu)
-cat("loglik:", loglik_new)
+cat("loglik:", loglik_new_gam)
 ```
 
 
@@ -399,5 +399,5 @@ scampr_kfunc = Kfunc(scampr_K_obs, scampr_K_env)
 
 #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
 loglik_new_scampr = sum(dat$presence * log(mu) - dat$quad.size * mu)
-cat("loglik:", loglik_new)
+cat("loglik:", loglik_new_scampr)
 ```

@@ -41,7 +41,7 @@ mu = exp(eta)
 
 #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
 loglik_new_glm = sum(dat$pt * log(mu) - dat$wt *mu)
-cat("loglik:", loglik_new, "\n")
+cat("loglik:", loglik_new_glm, "\n")
   
 #predict the fitted intensity at every grid cell
 X_grid = model.matrix( ~tempann + rainann + rugged, data = grid_xy)
@@ -167,7 +167,7 @@ for (iter in 1:N){
   
   #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
   loglik_new_glm = sum(dat_rename$pt * log(mu) - dat_rename$wt *mu)
-  cat("iter", iter, "loglik:", loglik_new, "\n")
+  cat("iter", iter, "loglik:", loglik_new_glm, "\n")
   
   #stop once relative change in log-likelihood is small
   if(abs((loglik_new_glm - loglik)/loglik_new_glm) < 1e-6) break
@@ -190,7 +190,7 @@ grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
 # Mapping according to vignette
 load("po_sp_lonlat.RDATA")
 load("intensity_map.RDATA")
-glm_map = intensity_map_glmnet(grid_pred_lonlat, title = "glm")
+glm_map = intensity_map(grid_pred_lonlat, title = "glm")
 print(glm_map)
 
 # Calculate the observed, simulated K functions
@@ -409,26 +409,9 @@ grid_pred_proj = st_sf(intensity = grid_xy$z,
 grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
 
 # Mapping according to vignette
-intensity_map_glmnet = function(grid_pred_lonlat, title){
-  map <- tm_shape(border_lonlat) + # create tmap object
-    tm_polygons() + # add border
-    tm_shape(grid_pred_lonlat) + # create tmap object for points to overlay
-    tm_polygons(fill = "log_intensity",
-                fill.scale = tm_scale_continuous(
-                  values = "turbo",
-                  #limits =  c(-8, 0),
-                  outliers.trunc = c(TRUE, TRUE)),
-                col = NA,
-                fill.legend = tm_legend(title = "Log fitted intensity")) +
-    tm_shape(po_sp_lonlat) +
-    tm_dots(size = 0.2, fill = "red", shape = 4, fill_alpha = 0.8) + #, fill.legend = tm_legend_hide()) + # add the points
-    tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
-    tm_title(title) + # manage the layout
-    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
-            labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")}))
-}  
 load("po_sp_lonlat.RDATA")
-glmnet_map = intensity_map_glmnet(grid_pred_lonlat, title = "glmnet")
+load("intensity_map.RDATA")
+glmnet_map = intensity_map(grid_pred_lonlat, title = "glmnet")
 print(glmnet_map)
 
 domain.grid = subset(grid_xy, select = -z)
@@ -463,7 +446,7 @@ load("scampr_map.RDATA")
 tmap_arrange(
   gam_map,
   scampr_map,
-  glm1_map,
+  glm_map,
   glmnet_map,
   nrow = 1
 )

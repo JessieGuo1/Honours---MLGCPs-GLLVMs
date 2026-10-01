@@ -60,7 +60,7 @@ model$KL_int
 
 
 ```{r running gllvm 2 l.v.}
-model = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 5)
+model = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 100)
 model$time
 model$KL
 model$time_int
@@ -140,7 +140,7 @@ model$KL_int
 
 
 ```{r alternating glms using 2 l.v.}
-model = alt_glm(microbial[, 1:200], Xenv[, 1:2], l.v. = 2, 5, mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
+model = alt_glm(microbial[, 1:200], Xenv[, 1:2], l.v. = 2, 100, mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
 model$time
 model$KL
 model$ite_converge_all
@@ -192,7 +192,7 @@ pen_lam_glmnet = function(Y, X, l.v., B, u){
         eta = new_X%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
         mu = exp(eta)
         loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
-        if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+        if(abs((loglik_new - loglik)/loglik) < 1e-6) break
         loglik = loglik_new
         }
       })
@@ -219,7 +219,7 @@ model$KL_int
 
 
 ```{r glmnet - penalty on u using 2 l.v.}
-model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 5, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
+model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 100, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
 model$time
 model$KL
 model$ite_converge_all
@@ -391,7 +391,7 @@ model$loglik_all #why different?
 
 
 ```{r alternating glms, 2 l.v. updating through constraints -- Chen}
-model = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 2, B = 10, K = 2, u_all = mvrnorm(56, c(0, 0), diag(2)))
+model = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, K = 2, u_all = mvrnorm(56, c(0, 0), diag(2)))
 
 model$time
 model$KL
@@ -401,3 +401,66 @@ model$KL_int
 model$loglik_new_all
 model$loglik_all
 ```
+
+
+
+```{r glmnet - penalty on lambda and u using 2 l.v.}
+
+B = 100
+time8 = rep(NA, B)
+KL8 = rep(NA, B)
+j_all6 = rep(NA, B)
+
+for (k in 1:B){
+  sim_counts = simulate(true_model2, nsim = 1, conditional = TRUE)
+  sim_counts = as.matrix(sim_counts) 
+  time_i = system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # 2 latent variables
+
+  beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 5)
+  
+  N = 20
+  K = 1
+  loglik = -Inf
+  for (j in 1:N){
+  
+    for (i in 1:ncol(sim_counts)){
+      glmnet4 = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = sim_counts[, i], intercept = TRUE, family = poisson(link = 'log'), alpha = 0, lambda = 5*sqrt(K))
+      
+      beta_lambda[i, ] = t(c(glmnet4$a0, as.numeric(glmnet4$beta))) #1 x 5, as.numeric and c() because it's stored as sparse matrix
+    }
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:3] #200 x 3
+    lambda = beta_lambda[, 4:5] #200 x 2
+    
+    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
+    new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2
+  
+    for (i in 1:nrow(sim_counts)){
+      glmnet4 = glmnet(x = lambda, y = as.numeric(sim_counts[i, ]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ], alpha = 0, lambda = 5*sqrt(K))
+      new_u[i, ] = t(as.numeric(glmnet4$beta))
+    }
+    u = new_u #56 x 2
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
+    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
+    loglik = loglik_new
+  }}) 
+  
+  j_all6[k] = j
+  time8[k] = as.numeric(time_i[3])
+  pred_counts_i = exp(eta)
+  KL.ij = pred_counts2*(log(pred_counts2/pred_counts_i)) - (pred_counts2 - pred_counts_i) 
+  KL8[k] = sum(KL.ij)
+}
+
+time8
+KL8
+j_all6
+
+c(mean(time8), sqrt(var(time8)))
+c(mean(KL8), sqrt(var(KL8)))
+
+```
+

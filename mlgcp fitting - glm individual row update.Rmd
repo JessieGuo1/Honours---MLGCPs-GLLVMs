@@ -363,3 +363,34 @@ load("Kfunc.RDATA")
 glmnet_m_individ_row_kfunc = Kfunc(glmnet_m_individ_row_K_obs, glmnet_m_individ_row_K_env)
 ```
 
+
+
+```{r}
+tmap_mode("plot")
+
+load("glmnet_m_map.RDATA")
+load("glmnet_m_oneq_map.RDATA")
+load("glmnet_mlgcp_map.RDATA")
+
+tmap_arrange(
+  glmnet_m_map,
+  glmnet_m_oneq_map,
+  glmnet_m_individ_row_map,
+  glmnet_mlgcp_map,
+  nrow = 1
+)
+
+load("time_mglmnet.RDATA")
+load("time_mglmnet_oneq.RDATA")
+load("time_mlgcp.RDATA")
+
+c(time_mglmnet, time_mglmnet_oneq, time_mglmnet_individ_row, time_mlgcp)
+
+load("loglik_new_mglmnet.RDATA")
+load("loglik_new_mglmnet_oneq.RDATA")
+load("loglik_new_mlgcp.RDATA")
+
+c(loglik_new_mglmnet, loglik_new_mglmnet_oneq, loglik_new_mglmnet_individ_row, loglik_new_mlgcp)
+
+```
+

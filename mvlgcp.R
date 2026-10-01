@@ -158,9 +158,11 @@ if (exists("mB1")) {
 pred_mlgcp = predict(mB1, type = "response")
 
 loglik_new_mlgcp = sum(dat_rename$pt * log(pred_mlgcp) - dat_rename$wt * pred_mlgcp)
+save(loglik_new_mlgcp, file = "loglik_new_mlgcp.RDATA")
 
 time_mlgcp = as.numeric(time_i[3])
 time_mlgcp
+save(time_mlgcp, file = "RDATA")
 
 
 #prediction grid coordinates + covariates
@@ -212,9 +214,7 @@ species_points_lonlat = st_transform(species_points_sf, crs = 4326)
 
 glmnet_mlgcp_map = m_intensity_map(grid_pred_lonlat, species_points_lonlat, species_label = 9)
 print(glmnet_mlgcp_map)
-
-
-
+save(glmnet_mlgcp_map, file = "glmnet_mlgcp_map.RDATA")
 
 
 
