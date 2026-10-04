@@ -7,6 +7,7 @@ date: "2026-03-18"
 ```{r preparation}
 #install.packages("gllvm")
 library(gllvm)
+library(dplyr)
 #library(tidyverse)
 set.seed(0)
 data(microbialdata)
@@ -31,6 +32,9 @@ model_and_pred = function(Y, X, l.v.){
 glvm = function(Y, X, l.v., B){
   time = rep(NA, B)
   KL = rep(NA, B)
+  loglik_new_all = rep(NA, B)
+  loglik_all = rep(NA, B)
+  
   model_pred = model_and_pred(Y, X, l.v.)
   for (i in 1:B){
     sim_counts = simulate(model_pred$true_model, nsim = 1, conditional = TRUE)
@@ -40,7 +44,11 @@ glvm = function(Y, X, l.v., B){
       model_i = gllvm(sim_counts, X, num.lv = l.v., family = poisson(link = 'log'), method = "LA")}) 
     time[i] = as.numeric(time_i[3])
     pred_counts_i = predict(model_i, type = 'response', lv.pred = TRUE) #account for latent variable
+    mu = pred_counts_i
     
+    loglik_new = sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
+    loglik_new_all[i] = loglik_new
+    loglik_all[i] = model_i$logL
     KL.ij = model_pred$pred_counts*(log(model_pred$pred_counts/pred_counts_i)) - (model_pred$pred_counts - pred_counts_i) 
     KL[i] = sum(KL.ij)
   }
@@ -48,23 +56,35 @@ glvm = function(Y, X, l.v., B){
   
   time_int = c(mean(time), sqrt(var(time)))
   KL_int = c(mean(KL), sqrt(var(KL)))
-  return(list(time = time, KL = KL, time_int = time_int, KL_int = KL_int))
+  return(list(time = time, KL = KL, time_int = time_int, KL_int = KL_int, loglik_new_all = loglik_new_all, loglik_all = loglik_all))
 }
 
-model = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 5)
-model$time
-model$KL
-model$time_int
-model$KL_int
+gllvm_sim_1 = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 100)
+save(gllvm_sim_1, file = "gllvm_sim_1.RDATA")
+
+load("gllvm_sim_1.RDATA")
+gllvm_sim_1$time
+gllvm_sim_1$KL
+gllvm_sim_1$time_int
+gllvm_sim_1$KL_int
+gllvm_sim_1$loglik_new_all
+gllvm_sim_1$loglik_all
+
 ```
 
 
 ```{r running gllvm 2 l.v.}
-model = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 100)
-model$time
-model$KL
-model$time_int
-model$KL_int
+gllvm_sim_2 = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 100)
+save(gllvm_sim_2, file = "gllvm_sim_2.RDATA")
+
+load("gllvm_sim_2.RDATA")
+gllvm_sim_2$time
+gllvm_sim_2$KL
+gllvm_sim_2$time_int
+gllvm_sim_2$KL_int
+gllvm_sim_2$loglik_new_all
+gllvm_sim_1$loglik_all
+
 ```
 
 
@@ -74,159 +94,137 @@ alt_glm = function(Y, X, l.v., B, u){
   
   Y = as.matrix(Y)
   X = as.matrix(X)
+  new_X = cbind(1, X) #56 x 3
+  u_init = u
+  N = 20
 
   time = rep(NA, B)
   KL = rep(NA, B)
   ite_converge_all = rep(NA, B)
+  loglik_new_all = rep(NA, B)
+
   model_pred = model_and_pred(Y, X, l.v.)
 
   for (k in 1:B){
     sim_counts = simulate(model_pred$true_model, nsim = 1, conditional = TRUE)
     sim_counts = as.matrix(sim_counts)
-    beta_lambda = matrix(NA, nrow = ncol(Y), ncol = 1 + ncol(X) + ncol(u)) #preset matrix of coefficients including betas and lambdas, nrow = no. of columns in the responses, no. of columns = beta0, beta1, beta2, lambda
-    
-    N = 20
     loglik = -Inf
+    u = u_init
+    
+    beta_lambda = matrix(NA, nrow = ncol(Y), ncol = 1 + ncol(X) + ncol(u)) #preset matrix of coefficients including betas and lambdas, nrow = no. of columns in the responses, no. of columns = beta0, beta1, beta2, lambda
+    B
     time_i = system.time({
-      for (j in 1:N){
-        suppressWarnings(
-        for (i in 1:ncol(sim_counts)){
-          glm1 = glm.fit(y = sim_counts[, i], x = cbind(1, X, u), intercept = TRUE, family=poisson(link='log')) 
-          beta_lambda[i, ] = t(glm1$coefficients) #1 x 4
-        }
-        )
-        beta = beta_lambda[, 1:(ncol(X)+1)] #200 x 3
-        lambda = beta_lambda[, (ncol(X) + 2):(ncol(X) + 1 + ncol(u))] #200 x 1
+      for (iter in 1:N){
         
-        new_X = cbind(1, X) #56 x 3
+        X_u = cbind(new_X, u)
+        j
+#        suppressWarnings(
+        for (j in 1:ncol(sim_counts)){
+          if (iter == 1) {
+            warm_start_i = NULL
+          }
+          else {
+            warm_start_i = as.numeric(beta_lambda[j, ])
+          }
+          
+          glm1 = try(
+            glm.fit(y = sim_counts[, j], x = X_u, intercept = TRUE, family=poisson(link='log'), control = glm.control(maxit = 50)), silent = TRUE) 
+          
+#          if (inherits(glm1, "try-error") ||
+#              any(!is.finite(glm1$coefficients))) {
+#            glm.fit(y = sim_counts[, i], x = X_u, intercept = TRUE, family=poisson(link='log'), start = NULL, control = glm.control(maxit = 50))
+#          }
+          
+          beta_lambda[j, ] = t(glm1$coefficients) #1 x 4
+          }
+#        )
+        beta = beta_lambda[, 1:(ncol(X)+1), drop = FALSE] #200 x 3
+        lambda = beta_lambda[, (ncol(X) + 2):(ncol(X) + 1 + ncol(u)), drop = FALSE] #200 x 1
+#        lambda = pmin(pmax(lambda, -10), 10)
+        offset = new_X%*%t(beta)
+        
         new_u = matrix(NA, nrow = nrow(Y), ncol = ncol(u)) #56 x 1
-        
+
         suppressWarnings(
+          
         for (i in 1:nrow(sim_counts)){
-          glm1 = glm.fit(y = as.numeric(sim_counts[i, ]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = (new_X%*%t(beta))[i, ]) #invalid type without as.numeric
+          
+          glm1 = try(
+            glm.fit(y = as.numeric(sim_counts[i, ]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = offset[i, ], control = glm.control(maxit = 50)), #invalid type without as.numeric
+          silent = TRUE)
+
+#          if (inherits(glm1, "try-error") ||
+#              any(!is.finite(glm1$coefficients))) {
+#              glm1 = glm.fit(y = sim_counts[i, ], x = lambda, intercept = FALSE, family=poisson(link='log'), start = NULL, control = glm.control(maxit = 50)) 
+#          }
+          
           new_u[i, ] = t(glm1$coefficients) 
-        }
+          }
         )
         u = new_u #56 x 1
-        eta = new_X%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-        eta = pmin(pmax(eta, -20), 20) #clamping to limit the exp(eta)
+        eta = offset + u%*%t(lambda) #56 x 200 + 56 x 200
+#        eta = pmin(pmax(eta, -20), 20) #clamping to limit the exp(eta)
         mu = exp(eta)
-        loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
-        if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
-        loglik = loglik_new
+        loglik_new = sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
+        if (is.finite(loglik) && is.finite(loglik_new)) {
+          rel_change = abs(loglik_new - loglik)/ max(1, abs(loglik_new))
+      
+          cat(
+          "k =", k,
+          "iter =", iter,
+          "loglik =", loglik,
+          "loglik_new =", loglik_new,
+          "rel_change =", rel_change,
+          "\n")
+        if (rel_change < 1e-6) break
         }
+        loglik = loglik_new
+      }
+      
       }) 
   
-    ite_converge_all[k] = j
+    ite_converge_all[k] = iter
     time[k] = as.numeric(time_i[3])
     pred_counts_i = mu
     KL.ij = model_pred$pred_counts*(log(model_pred$pred_counts/pred_counts_i)) - (model_pred$pred_counts - pred_counts_i) 
     KL[k] = sum(KL.ij)
+    loglik_new_all[k] = loglik_new
+
   }
   
   time_int = c(mean(time), sqrt(var(time)))
   KL_int = c(mean(KL), sqrt(var(KL)))
-  return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int))
+  return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int, loglik_new_all = loglik_new_all))
 }
 
-model = alt_glm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 5, u = as.matrix(rnorm(56, 0, 1)))
-model$time
-model$KL
-model$ite_converge_all
-model$time_int
-model$KL_int
+glm_sim_1 = alt_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 1, B = 100, u = as.matrix(rnorm(56, 0, 1)))
+save(glm_sim_1, file = "glm_sim_1.RDATA")
+
+load("glm_sim_1.RDATA")
+glm_sim_1$time
+glm_sim_1$KL
+glm_sim_1$ite_converge_all
+glm_sim_1$time_int
+glm_sim_1$KL_int
+glm_sim_1$loglik_new_all
 
 ```
 
 
 ```{r alternating glms using 2 l.v.}
-model = alt_glm(microbial[, 1:200], Xenv[, 1:2], l.v. = 2, 100, mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
-model$time
-model$KL
-model$ite_converge_all
-model$time_int
-model$KL_int
+library(MASS)
+glm_sim_2 = alt_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 2, 100, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
+save(glm_sim_2, file = "glm_sim_2.RDATA")
+
+load("glm_sim_2.RDATA")
+glm_sim_2$time
+glm_sim_2$KL
+glm_sim_2$ite_converge_all
+glm_sim_2$time_int
+glm_sim_2$KL_int
+glm_sim_2$loglik_new_all
+
 ```
-
-
-```{r glmnet - penalty on u using 1 l.v.}
-#install.packages('glmnet')
-library(glmnet)
-
-pen_lam_glmnet = function(Y, X, l.v., B, u){
-  
-  Y = as.matrix(Y)
-  X = as.matrix(X)
-  
-  time = rep(NA, B)
-  KL = rep(NA, B)
-  ite_converge_all = rep(NA, B)
-  model_pred = model_and_pred(Y, X, l.v.)
-
-  for (k in 1:B){
-    sim_counts = simulate(model_pred$true_model, nsim = 1, conditional = TRUE)
-    sim_counts = as.matrix(sim_counts)
-    beta_lambda = matrix(NA, nrow = ncol(Y), ncol = 1 + ncol(X) + ncol(u))
-    
-    N = 20
-    loglik = -Inf
-    time_i = system.time({
-      for (j in 1:N){
-        suppressWarnings(
-        for (i in 1:ncol(sim_counts)){
-          glm1 = glm.fit(y = sim_counts[, i], x = cbind(1, X, u), intercept = TRUE, family = poisson(link = 'log'))
-          beta_lambda[i, ] = t(glm1$coefficients) #1 x 4, as.numeric and c() because it's stored as sparse matrix
-        }
-        )
-        beta = beta_lambda[, 1:(1 + ncol(X))] #200 x 3
-        lambda = as.matrix(beta_lambda[, (1 + ncol(X) + 1):(1 + ncol(X) + ncol(u))]) #200 x 1
-        
-        new_X = as.matrix(cbind(1, X)) #56 x 3
-        new_u = matrix(NA, nrow = nrow(Y), ncol = ncol(u)) #56 x 1
-      
-        for (i in 1:nrow(sim_counts)){
-          glmnet1 = glmnet(x = cbind(lambda, 0), y = as.numeric(sim_counts[i, ]), intercept = FALSE, family = "poisson", offset = (new_X%*%t(beta))[i, ], alpha = 0, lambda = 1)
-          new_u[i, ] = t(as.numeric(glmnet1$beta)[1:ncol(lambda)])
-        }
-        u = new_u #56 x 1
-        eta = new_X%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-        mu = exp(eta)
-        loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
-        if(abs((loglik_new - loglik)/loglik) < 1e-6) break
-        loglik = loglik_new
-        }
-      })
-    
-    ite_converge_all[k] = j
-    time[k] = as.numeric(time_i[3])
-    pred_counts_i = mu
-    KL.ij = model_pred$pred_counts*(log(model_pred$pred_counts/pred_counts_i)) - (model_pred$pred_counts - pred_counts_i) 
-    KL[k] = sum(KL.ij)
-  }
-  
-  time_int = c(mean(time), sqrt(var(time)))
-  KL_int = c(mean(KL), sqrt(var(KL)))
-  return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int))
-}  
-
-model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 5, u = as.matrix(rnorm(56, 0, 1)))
-model$time
-model$KL
-model$ite_converge_all
-model$time_int
-model$KL_int
-```
-
-
-```{r glmnet - penalty on u using 2 l.v.}
-model = pen_lam_glmnet(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 100, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)))
-model$time
-model$KL
-model$ite_converge_all
-model$time_int
-model$KL_int
-```
-
 
 
 ```{r alternating glms, 1 l.v. updating through constraints -- Chen}
@@ -278,7 +276,7 @@ lv_chen = function(Y, X, l.v., B, K, u_all){
       lambda_proj = matrix(NA, nrow = J, ncol = ncol(u_all)) 
       u_proj = matrix(NA, nrow = n, ncol = ncol(u_all)) #56 x 1
       
-      N = 20
+      N = 100
       loglik = -Inf
       for (iter in 1:N) {
       ## ---------------------------
@@ -297,7 +295,7 @@ lv_chen = function(Y, X, l.v., B, K, u_all){
             family = poisson(link = "log"),
             offset = cbind(1, X)[i, ] %*% t(beta_all), # 1 x 200
             start = u_all[i, ],
-            control = glm.control(maxit = 1)
+            control = glm.control(maxit = 20)
           )
   
           u = as.matrix(t(glm1$coefficients))
@@ -323,7 +321,7 @@ lv_chen = function(Y, X, l.v., B, K, u_all){
             x = X_u,
             family = poisson(link = "log"),
             start = start_vec,
-            control = glm.control(maxit = 1))
+            control = glm.control(maxit = 20))
         
           #if (!is.null(glm1) && all(is.finite(glm1$coefficients))) {
             coef_j = as.matrix(t(glm1$coefficients))
@@ -352,12 +350,8 @@ lv_chen = function(Y, X, l.v., B, K, u_all){
         eta = pmin(pmax(eta, -10), 10)
         mu = exp(eta)
         
-        loglik_new = sum(dnorm(u_all, log = TRUE)) +
-          sum(dpois(sim_counts, lambda = mu, log = TRUE))
-        
-        rel_change = abs(loglik_new - loglik) / (abs(loglik_new))
-        if (rel_change < 1e-3) break
-        
+        loglik_new = sum(dpois(sim_counts, lambda = mu, log = TRUE))
+        if (is.finite(loglik) && abs(loglik_new - loglik)/ max(1, abs(loglik_new)) < 1e-6) break
         loglik = loglik_new
         }
       })
@@ -377,90 +371,133 @@ lv_chen = function(Y, X, l.v., B, K, u_all){
   return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int, loglik_all = loglik_all, loglik_new_all = loglik_new_all))
 } 
 
-model = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 1, B = 5, K = 1, u_all = as.matrix(rnorm(56, 0, 1)))
+jmle_sim_1 = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 1, B = 100, K = 1, u_all = as.matrix(rnorm(56, 0, 1)))
+save(jmle_sim_1, file = "jmle_sim_1.RDATA")
 
-model$time
-model$KL
-model$ite_converge_all
-model$time_int
-model$KL_int
-model$loglik_new_all
-model$loglik_all #why different?
+load("jmle_sim_1.RDATA")
+jmle_sim_1$time
+jmle_sim_1$KL
+jmle_sim_1$ite_converge_all
+jmle_sim_1$time_int
+jmle_sim_1$KL_int
+jmle_sim_1$loglik_new_all
 
 ```
 
 
 ```{r alternating glms, 2 l.v. updating through constraints -- Chen}
-model = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, K = 2, u_all = mvrnorm(56, c(0, 0), diag(2)))
+jmle_sim_2 = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, K = 2, u_all = mvrnorm(56, c(0, 0), diag(2)))
+save(jmle_sim_2, file = "jmle_sim_2.RDATA")
 
-model$time
-model$KL
-model$ite_converge_all
-model$time_int
-model$KL_int
-model$loglik_new_all
-model$loglik_all
+load("jmle_sim_2.RDATA")
+jmle_sim_2$time
+jmle_sim_2$KL
+jmle_sim_2$ite_converge_all
+jmle_sim_2$time_int
+jmle_sim_2$KL_int
+jmle_sim_2$loglik_new_all
 ```
 
 
 
-```{r glmnet - penalty on lambda and u using 2 l.v.}
-
-B = 100
-time8 = rep(NA, B)
-KL8 = rep(NA, B)
-j_all6 = rep(NA, B)
-
-for (k in 1:B){
-  sim_counts = simulate(true_model2, nsim = 1, conditional = TRUE)
-  sim_counts = as.matrix(sim_counts) 
-  time_i = system.time({u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)) # 2 latent variables
-
-  beta_lambda = matrix(NA, nrow = length(microbial[, 1:200]), ncol = 5)
+```{r glmnet - penalty on lambda and u using 1 l.v.}
+pen_glm = function(Y, X, l.v., B, u, K){
   
-  N = 20
-  K = 1
-  loglik = -Inf
-  for (j in 1:N){
-  
-    for (i in 1:ncol(sim_counts)){
-      glmnet4 = glmnet(x = cbind(Xenv[, 1], Xenv[, 2], u), y = sim_counts[, i], intercept = TRUE, family = poisson(link = 'log'), alpha = 0, lambda = 5*sqrt(K))
-      
-      beta_lambda[i, ] = t(c(glmnet4$a0, as.numeric(glmnet4$beta))) #1 x 5, as.numeric and c() because it's stored as sparse matrix
-    }
-    beta_lambda #(intercept beta lambda)
-    beta = beta_lambda[, 1:3] #200 x 3
-    lambda = beta_lambda[, 4:5] #200 x 2
+  Y = as.matrix(Y)
+  X = as.matrix(X)
+  new_X = cbind(1, X) #56 x 3
+  u_init = u
+  N = 100
+
+  time = rep(NA, B)
+  KL = rep(NA, B)
+  ite_converge_all = rep(NA, B)
+  loglik_new_all = rep(NA, B)
+
+  model_pred = model_and_pred(Y, X, l.v.)
+
+  for (k in 1:B){
+    sim_counts = simulate(model_pred$true_model, nsim = 1, conditional = TRUE)
+    sim_counts = as.matrix(sim_counts)
+    loglik = -Inf
+    u = u_init
     
-    new_Xenv = cbind(1, Xenv[, 1], Xenv[, 2]) #56 x 3
-    new_u = matrix(NA, nrow = nrow(microbial), ncol = 2) #56 x 2
+    beta_lambda = matrix(NA, nrow = ncol(Y), ncol = 1 + ncol(X) + ncol(u)) #preset matrix of coefficients including betas and lambdas, nrow = no. of columns in the responses, no. of columns = beta0, beta1, beta2, lambda
+    warm_start = vector("list", ncol(sim_counts))
+    warm_start_u = vector("list", nrow(sim_counts))
+
+    time_i = system.time({
+      for (iter in 1:N){
+        
+        X_u = cbind(X, u)
+        
+#        suppressWarnings(
+        for (j in 1:ncol(sim_counts)){
+          glmnet1 = glmnet:::glmnet.fit(y = sim_counts[, j], x = X_u, weights = rep(1, nrow(sim_counts)), intercept = TRUE, family=poisson(link='log'), warm = warm_start[[j]], alpha = 0, lambda = 5*sqrt(K), penalty.factor = c(rep(0, ncol(X)), rep(1, ncol(u))))
+          beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) #1 x ncol(1+X_u)  as.numeric and c() because it's stored as sparse matrix
+          warm_start[[j]] = list(a0 = as.numeric(glmnet1$a0), beta = as.numeric(glmnet1$beta))
+        }
+        
+        beta = beta_lambda[, 1:(ncol(X)+1), drop = FALSE] #200 x 3
+        lambda = beta_lambda[, (ncol(X) + 2):(ncol(X) + 1 + ncol(u)), drop = FALSE] #200 x 1
+
+        offset = new_X%*%t(beta)
+        new_u = matrix(NA, nrow = nrow(Y), ncol = ncol(u)) #56 x 1
   
-    for (i in 1:nrow(sim_counts)){
-      glmnet4 = glmnet(x = lambda, y = as.numeric(sim_counts[i, ]), intercept = FALSE, family=poisson(link='log'), offset = (new_Xenv%*%t(beta))[i, ], alpha = 0, lambda = 5*sqrt(K))
-      new_u[i, ] = t(as.numeric(glmnet4$beta))
-    }
-    u = new_u #56 x 2
-    u
-    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
-    mu = exp(eta)
-    loglik_new = sum(dnorm(u, log = TRUE)) + sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
-    if(abs((loglik_new - loglik)/loglik_new) < 1e-3) break
-    loglik = loglik_new
-  }}) 
+        for (i in 1:nrow(sim_counts)){
+          glmnet1 = glmnet:::glmnet.fit(y = as.numeric(sim_counts[i, ]), x = lambda, weights = rep(1, ncol(sim_counts)), intercept = FALSE, family=poisson(link='log'), offset = offset[i, ], alpha = 0, lambda = 5*sqrt(K), warm = warm_start_u[[i]]) #invalid type without as.numeric
+          
+          new_u[i, ] = t(as.numeric(glmnet1$beta))
+          warm_start_u[[i]] = list(a0 = as.numeric(glmnet1$a0), beta = as.numeric(glmnet1$beta))
+        }
+        
+        u = new_u #56 x 1
+        eta = offset + u%*%t(lambda) #56 x 200 + 56 x 200
+        mu = exp(eta)
+        loglik_new = sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
+        if (is.finite(loglik) && abs(loglik_new - loglik)/ max(1, abs(loglik_new)) < 1e-6) break
+        loglik = loglik_new
+        }
+      }) 
   
-  j_all6[k] = j
-  time8[k] = as.numeric(time_i[3])
-  pred_counts_i = exp(eta)
-  KL.ij = pred_counts2*(log(pred_counts2/pred_counts_i)) - (pred_counts2 - pred_counts_i) 
-  KL8[k] = sum(KL.ij)
+    ite_converge_all[k] = iter
+    time[k] = as.numeric(time_i[3])
+    pred_counts_i = mu
+    KL.ij = model_pred$pred_counts*(log(model_pred$pred_counts/pred_counts_i)) - (model_pred$pred_counts - pred_counts_i) 
+    KL[k] = sum(KL.ij)
+    loglik_new_all[k] = loglik_new
+  }
+  
+  time_int = c(mean(time), sqrt(var(time)))
+  KL_int = c(mean(KL), sqrt(var(KL)))
+  return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int, loglik_new_all = loglik_new_all))
 }
 
-time8
-KL8
-j_all6
+glmnet_sim_1 = pen_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 1, B = 100, u = as.matrix(rnorm(56, 0, 1)), K = 1)
+save(glmnet_sim_1, file = "glmnet_sim_1.RDATA")
 
-c(mean(time8), sqrt(var(time8)))
-c(mean(KL8), sqrt(var(KL8)))
+load("glmnet_sim_1.RDATA")
+glmnet_sim_1$time
+glmnet_sim_1$KL
+glmnet_sim_1$ite_converge_all
+glmnet_sim_1$time_int
+glmnet_sim_1$KL_int
+glmnet_sim_1$loglik_new_all
+
+```
+
+
+```{r glmnet - penalty on lambda and u using 2 l.v.}
+glmnet_sim_2 = pen_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), K = 1)
+save(glmnet_sim_2, file = "glmnet_sim_2.RDATA")
+
+load("glmnet_sim_2.RDATA")
+glmnet_sim_2$time
+glmnet_sim_2$KL
+glmnet_sim_2$ite_converge_all
+glmnet_sim_2$time_int
+glmnet_sim_2$KL_int
+glmnet_sim_2$loglik_new_all
 
 ```
 

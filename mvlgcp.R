@@ -162,7 +162,7 @@ save(loglik_new_mlgcp, file = "loglik_new_mlgcp.RDATA")
 
 time_mlgcp = as.numeric(time_i[3])
 time_mlgcp
-save(time_mlgcp, file = "RDATA")
+save(time_mlgcp, file = "time_mlgcp.RDATA")
 
 
 #prediction grid coordinates + covariates
