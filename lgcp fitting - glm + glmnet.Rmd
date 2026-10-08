@@ -6,62 +6,167 @@ editor_options:
   chunk_output_type: console
 ---
 ```{r glm}
+#library(MASS)
+load("dat.RDATA") #one quad. df, univariate species
+load("pres.RDATA")
+load("domain.RDATA")
+domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
+
+gc()
+```
+
+
+```{r}
+# need a function to strip environments from the model objects so they can be saved without being massive
+rm.env <- function(m) {
+  attr(attr(m$frame, "terms"), ".Environment") <- NULL
+  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
+  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
+  m
+}
+```
+
+
+```{r Build spatial basis functions}
 #Fitting GLM
-library(MASS)
-load("dat.RDATA")
+bfs <- make_basis(k = 50, domain, from.package = "scampr")
 
-dat$pt = dat$presence
-dat$wt = ifelse(dat$presence == 1, 1e-6, dat$quad.size)
-load("m.lgcp_lp.RDATA")
-Z = as.matrix(get.bf.matrix(m.lgcp_lp, dat[, c("x", "y")]))
-keep_cols = colSums(Z != 0) > 0 
-Z_star = Z[, keep_cols, drop = FALSE]
+# need to prune in the case of scampr bfs
+if (is(bfs, "scampr.bf")) {
+  tmp <- bf_matrix(bfs, rbind(pres[,c("x", "y")], quad[,c("x", "y")]))
+  tmp <- bf_matrix(bfs, pres[,c("x", "y")]) # via the data?
+  bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
+  bfs <- bfs[bf.check != 0, ]
+  rm(tmp, bf.check)
+}
 
-#sum(!keep_cols)
-#sv = svd(Z)
-#tol = max(dim(Z))*max(sv$d)*.Machine$double.eps #deciding when a singular value is effectively zero.
-#r = sum(sv$d > tol) #number of singular values that are impactful
-#V_r = sv$v[, seq_len(r), drop = FALSE] #keep r independent directions
-#Z_star = Z%*%V_r #rotate original basis cols into r independent basis cols
+#evaluate basis functions at every data point
+Z_star = bf_matrix(bfs, dat[, c("x", "y")])
+#Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
 
-X = cbind(1, dat$tempann, dat$rainann, dat$rugged, Z_star)
+#Z_mean = Matrix::colMeans(Z_star)
+#Z_ss = Matrix::colSums(Z_star^2)
 
-glm1 = glm.fit(y = dat$pt/dat$wt, x = X, intercept = FALSE, family = poisson(link = 'log'), weights = dat$wt)
+#Z_sd = sqrt(
+#  (Z_ss - n * Z_mean^2) / (n - 1)
+#)
 
-#glm1 = glm(pt/wt ~ tempann + rainann + rugged + Z_reduced, family = poisson(link = 'log'), data = dat, weights = wt)
+#Z_star = Z_star %*%
+#  Matrix::Diagonal(x = 1 / Z_sd)
 
-n = length(glm1$coefficients)
-beta = glm1$coefficients[1:(n - ncol(Z_star))] 
-u = glm1$coefficients[(n - ncol(Z_star) + 1):n]
+#initialise shared latent spatial field coefficients (u), one per basis function
 
-new_X = cbind(1, dat$tempann, dat$rainann, dat$rugged)
-#calculating loglikelihood
-eta = new_X%*%beta + Z_star%*%u #10426 x 1, per-row linear predictor (fixed + spatial)
-mu = exp(eta)
+```
 
-#weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-loglik_new_glm = sum(dat$pt * log(mu) - dat$wt *mu)
-cat("loglik:", loglik_new_glm, "\n")
+
+
+```{r glm with loop to convergence}
+u = rnorm(ncol(Z_star), 0, 1)
+
+dat_rename = dat %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+
+attach(dat_rename)
+Zu = Z_star%*%u
+
+X_full = cbind(1, mi, tempann)
+
+beta_lambda = matrix(NA,  nrow = 1, ncol = ncol(Zu) + ncol(X_full)) 
+
+N = 100 
+loglik = -Inf
+start_iter = if (all(is.finite(beta_lambda))) {
+  beta_lambda
+} else {
+  NULL
+}
+
+start_iter_u = if (all(is.finite(u))) {
+  u
+} else {
+  NULL
+}
+for (iter in 1:N){
+  X_Zu = cbind(X_full, Zu)
   
-#predict the fitted intensity at every grid cell
-X_grid = model.matrix( ~tempann + rainann + rugged, data = grid_xy)
-Z_grid = as.matrix(get.bf.matrix(m.lgcp_lp, grid_xy[, c("x", "y")])) #uses the bfs that m.lgcp_lp internally chose
-Z_grid_star = Z_grid[, keep_cols, drop = FALSE]
+  glm1 = glm.fit(y = occ/wt, x = X_Zu, intercept = TRUE, family = poisson(link = 'log'), weights = wt, start = start_iter)#, control = glm.control(maxit = 25))
+  
+  # store this species' intercept + beta + lambda (43 loadings)
+  beta_lambda = t(c(glm1$coefficients)) 
+  
+  #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
+  beta_lambda
+  beta = beta_lambda[, 1:ncol(X_full)]
+  lambda = (beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)])
+  
+  #fixed-effect linear predictor
+  offset_matrix = X_full%*%(beta)
+  
+  X_joint = Z_star*lambda 
+#  attr(X_joint, "xm") = rep(0, ncol(X_joint))
+#  attr(X_joint, "xs") = rep(1, ncol(X_joint))
+  
+  #fit shared u via one joint ridge regression
+  glm1 = glm.fit(x = X_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset_matrix), start = start_iter_u)#, control = glm.control(maxit=25))
+  
+  new_u = as.numeric(glm1$coefficients)
+    
+  u = new_u
+  print(u)
+  
+  # Rebuild Zu with updated u, for next iteration's column update
+  Zu = Z_star%*%u
+  
+  eta = offset_matrix + (Z_star * lambda) %*% u
+  mu = exp(eta)
+  pred_glm = mu
+  
+  #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+  loglik_new_glm = sum(occ * log(mu) - wt *mu)
+  cat("iter", iter, "loglik:", loglik_new_glm, "\n")
+  
+  #stop once relative change in log-likelihood is small
+  if(abs((loglik_new_glm - loglik)/loglik_new_glm) < 1e-6) break
+  loglik = loglik_new_glm}
 
-#Z_grid_star = Z_grid%*%V_r
-grid_xy$z = exp(drop(X_grid%*%beta + Z_grid_star%*%u)) 
+save(loglik_new_glm, file = "loglik_new_glm.RDATA")
+```
 
-grid_pred_proj = st_sf(intensity = grid_xy$z,
-                       log_intensity = log(grid_xy$z),
-                       geometry = grid_cells_proj) #simple feature obj, dataframe containing spatial geometries
-grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
 
-# Mapping according to vignette
-load("po_sp_lonlat.RDATA")
+
+```{r Intensity map for a chosen species}
+X_domain = cbind(1, domain$mi, domain$tempann)
+Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
+
+Zu_domain = Z_domain_star %*% u
+
+domain$log_intensity = as.numeric(X_domain%*%beta + Zu_domain%*%lambda)
+
+library(stars)
+domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
+grid_pred_lonlat = domain_stars
+
+species_points = pres
+species_points_lonlat = st_as_sf(species_points, coords = c("lon", "lat"), crs = 4326)
+
+border_lonlat = disBorder("NSW")
+
+tmap_mode("plot")
+
 load("intensity_map.RDATA")
-glm_map = intensity_map(grid_pred_lonlat, title = "glm")
+glm_map = intensity_map(grid_pred_lonlat, title = "glm Species: 19")
 print(glm_map)
+save(glm_map, file = "glm_map.RDATA")
+```
 
+
+
+
+```{r Inhomogeneous K functions}
 # Calculate the observed, simulated K functions
 domain.grid = subset(grid_xy, select = -z)
 # predict intensity values
@@ -70,7 +175,7 @@ domain.grid$z = grid_xy$z
 # parameter values
 var_u = 1 # var(u), inital u
 vars <- rep(var_u, m.lgcp_lp$basis.per.res)
-var_smooth_grid <- lambda^2 * drop(Z_grid_star^2 %*% vars)
+var_smooth_grid <- drop((Z_grid_star * lambda)^2 %*% vars)
 var_smooth = mean(var_smooth_grid)
 #var_smooth = var(drop(Z_grid%*%u)) #Z_grid_star
 domain.grid$mu = drop(X_grid%*%beta)
@@ -87,6 +192,191 @@ glm_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model
 load("Kfunc.RDATA")
 glm_kfunc = Kfunc(glm_K_obs, glm_K_env)
 ```
+
+
+
+
+```{r penalised glm with loop to convergence, Zulambda}
+#Fitting penalised glm
+library(glmnet)
+
+ridgePen=1 #penalty strength
+nGlmnetIter=25 #max iterations glmnet allowed
+
+#initialise shared latent spatial field coefficients (u), one per basis function
+u = rnorm(ncol(Z_star), 0, 1)
+
+#attach Zu = each basis function's column scaled by u[k]
+#(elementwise scaling via sweep - keeps all 50 basis functions SEPARATE, so column-update step can estimate full 50-length loading vector per species)
+dat_rename = dat %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+
+attach(dat_rename)
+Zu = Z_star%*%u
+
+X_full = cbind(1, mi, tempann) #10426 x 4, fixed-effect design matrix
+X_Zu = cbind(X_full[, -1], Zu)
+
+beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Zu) + ncol(X_full)) #fitted intercept+beta+lambda per species
+
+N = 100 #max no. of outer (column-update + row-update) iterations
+loglik = -Inf
+warm_start = if (all(is.finite(beta_lambda))) {
+  list(a0 = glmnet1$a0, beta = as.numeric(glmnet1$beta))
+} else {
+  NULL
+}
+penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) 
+
+for (iter in 1:N){
+    #design matrix - covariates + species' rows of spatial term (Zu)
+  X_Zu = cbind(X_full[, -1], Zu)
+    
+    #weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
+    glmnet1 = glmnet:::glmnet.fit(y = occ/wt, x = as.matrix(X_Zu), intercept = TRUE, family = poisson(link = 'log'), warm = warm_start, weights = wt, alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor)#, maxit=nGlmnetIter)
+    
+    # store this species' intercept + beta (3 covariates) + lambda (1 loading)
+    beta_lambda = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
+  
+  #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
+  beta_lambda
+  beta = beta_lambda[, 1:ncol(X_full)] #1 x 4
+  lambda = (beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #1 x 1
+  
+    #row update: fit one shared spatial field (u)
+  #elementwise product: each basis function scaled by that row's species' loading
+
+  #fixed-effect linear predictor
+  offset_matrix = X_full%*%beta #10426 x 1
+    
+  X_joint = Z_star * lambda #10426 x 1
+  attr(X_joint, "xm") = rep(0, ncol(X_joint))
+  attr(X_joint, "xs") = rep(1, ncol(X_joint))
+  
+  #fit shared u via one joint ridge regression
+  glmnet1 = glmnet:::glmnet.fit(x = X_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset_matrix), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)))#, maxit=nGlmnetIter) 
+  
+  new_u = as.numeric(glmnet1$beta)
+    
+  u = new_u #43 x 1, updated shared spatial field coefficients
+  print(u)
+  
+  #rebuild Zu with updated u, for next iteration's column update
+  #dat_rename$Zu = sweep(Z_star, 2, u, "*") #Z_star%*%u  #543323 x 43
+  Zu = Z_star%*%u
+  
+  #convergence check - weighted Poisson-process log-likelihood kernel + Gaussian prior on u --- ##
+  eta = offset_matrix + (Z_star * lambda) %*% u #543323 x 1, per-row linear predictor (fixed + spatial)
+  mu = exp(eta)
+  pred_glmnet = mu
+
+  #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+  loglik_new_glmnet = sum(occ * log(mu) - wt * mu)
+  cat("iter", iter, "loglik:", loglik_new_glmnet, "\n")
+  
+  #stop once relative change in log-likelihood is small
+  if(abs((loglik_new_glmnet - loglik)/loglik_new_glmnet) < 1e-6) break
+  loglik = loglik_new_glmnet}
+
+save(loglik_new_glmnet, file = "loglik_new_glmnet.RDATA")
+```
+
+
+
+```{r Intensity map for a chosen species}
+###########################
+#Using tmap
+
+X_domain = cbind(1, domain$mi, domain$tempann)
+Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
+
+Zu_domain = Z_domain_star %*% u
+
+domain$log_intensity = as.numeric(X_domain%*%beta + Zu_domain%*%lambda)
+
+library(stars)
+domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
+grid_pred_lonlat = domain_stars
+
+species_points = pres
+species_points_lonlat = st_as_sf(species_points, coords = c("lon", "lat"), crs = 4326)
+
+border_lonlat = disBorder("NSW")
+
+tmap_mode("plot")
+
+load("intensity_map.RDATA")
+glmnet_map = intensity_map(grid_pred_lonlat, title = "glmnet Species: 19")
+print(glmnet_map)
+save(glmnet_map, file = "glmnet_map.RDATA")
+
+```
+
+
+
+```{r Inhomogeneous K functions}
+domain.grid = subset(grid_xy, select = -z)
+# predict intensity values
+domain.grid$z = grid_xy$z
+
+# parameter values
+var_u = 1/ridgePen
+vars <- rep(var_u, m.lgcp_lp$basis.per.res)
+var_smooth_grid <- drop((Z_grid_star * lambda)^2 %*% vars)
+var_smooth = mean(var_smooth_grid)
+#var_smooth = var(drop(Z_grid%*%u))
+
+domain.grid$mu = drop(X_grid%*%beta)
+fixed.im = as.im(domain.grid[, c("x", "y", "mu")], W = win)
+# create  pixel images
+pred.im = as.im(domain.grid[, c("x","y","z")], W = win)
+
+# simulate the envelopes/bounds
+load("po_sp_ppp.RDATA")
+glmnet_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
+glmnet_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1])))
+
+# Create Inhomogeneous K-func graphs
+load("Kfunc.RDATA")
+glmnet_kfunc = Kfunc(glmnet_K_obs, glmnet_K_env)
+
+tmap_mode("plot")
+
+load("gam_map.RDATA")
+load("scampr_map.RDATA")
+load("glm_map.RDATA")
+load("glmnet_map.RDATA")
+
+tmap_arrange(
+  gam_map,
+  scampr_map,
+  glm_map,
+  glmnet_map,
+  nrow = 1
+)
+
+par(mfrow=c(1, 4))
+Kfunc(gam_K_obs, gam_K_env)
+Kfunc(scampr_K_obs, scampr_K_env)
+Kfunc(glm_K_obs, glm_K_env)
+Kfunc(glmnet_K_obs, glmnet_K_env)
+
+
+c(loglik_new_gam, loglik_new_scampr, loglik_new_glm, loglik_new_glmnet)
+
+#c(pred_gam, pred_scampr, pred_glm, pred_glmnet)
+```
+
+
+
+
+
+
+
+
+
+
+
 
 
 ```{r glm with loop to convergence}
@@ -218,102 +508,6 @@ glm_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model
 load("Kfunc.RDATA")
 glm_kfunc = Kfunc(glm_K_obs, glm_K_env)
 ```
-
-
-
-
-```{r penalised glm}
-#Fitting penalised glm
-
-library(glmnet)
-#penalty_factor <- c(
-#  rep(0, 3),  # do not penalise fixed effects
-#  rep(1, ncol(Z))   # penalise spatial coefficients
-#)
-
-load("dat.RDATA")
-dat$pt = dat$presence
-dat$wt = ifelse(dat$presence == 1, 1e-6, dat$quad.size)
-load("m.lgcp_lp.RDATA")
-Z = as.matrix(get.bf.matrix(m.lgcp_lp, dat[, c("x", "y")]))
-keep_cols = colSums(Z != 0) > 0 
-Z_star = Z[, keep_cols, drop = FALSE]
-
-glm1_reg = glmnet:::glmnet.fit(y = dat$pt/dat$wt, x = cbind(dat$tempann, dat$rainann, dat$rugged, Z_star), intercept = TRUE, family = poisson(link = 'log'), weights = dat$wt, alpha = 0, lambda = 1)#, penalty.factor = penalty_factor)
-
-coefs = coefficients(glm1_reg)
-n = length(coefs)
-beta = coefs[1:(n - ncol(Z_star))]
-u = coefs[(n - ncol(Z_star) + 1):n]
-
-new_X = cbind(1, dat$tempann, dat$rainann, dat$rugged)
-#calculating loglikelihood
-eta = new_X%*%beta + Z_star%*%u #543323 x 1, per-row linear predictor (fixed + spatial)
-mu = exp(eta)
-
-#weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-loglik_new_glmnet = sum(dat$pt * log(mu) - dat$wt * mu)
-cat("loglik:", loglik_new_glmnet, "\n")
-
-#predict the fitted intensity at every grid cell
-grid_xy$z = exp(drop(X_grid%*%beta + Z_grid_star%*%u))
-#grid_xy$z = predict(glm1_reg, newx = grid_xy[, c("x", "y")], type = "response")
-
-grid_pred_proj = st_sf(intensity = grid_xy$z,
-                       log_intensity = log(grid_xy$z),
-                       geometry = grid_cells_proj) #simple feature obj, dataframe containing spatial geometries
-grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
-
-# Mapping according to vignette
-load("po_sp_lonlat.RDATA")
-load("intensity_map.RDATA")
-glmnet_map = intensity_map(grid_pred_lonlat, title = "glmnet")
-print(glmnet_map)
-
-domain.grid = subset(grid_xy, select = -z)
-# predict intensity values
-domain.grid$z = grid_xy$z
-
-# parameter values
-var_u = 1/ridgePen
-vars <- rep(var_u, m.lgcp_lp$basis.per.res)
-var_smooth_grid <- drop((Z_grid_star * lambda)^2 %*% vars)
-var_smooth = mean(var_smooth_grid)
-#var_smooth = var(drop(Z_grid%*%u))
-
-domain.grid$mu = drop(X_grid%*%beta)
-fixed.im = as.im(domain.grid[, c("x", "y", "mu")], W = win)
-# create  pixel images
-pred.im = as.im(domain.grid[, c("x","y","z")], W = win)
-
-# simulate the envelopes/bounds
-load("po_sp_ppp.RDATA")
-glmnet_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
-glmnet_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1])))
-
-# Create Inhomogeneous K-func graphs
-load("Kfunc.RDATA")
-glmnet_kfunc = Kfunc(glmnet_K_obs, glmnet_K_env)
-
-tmap_mode("plot")
-
-load("gam_map.RDATA")
-load("scampr_map.RDATA")
-tmap_arrange(
-  gam_map,
-  scampr_map,
-  glm_map,
-  glmnet_map,
-  nrow = 1
-)
-
-par(mfrow=c(1, 4))
-Kfunc(gam_K_obs, gam_K_env)
-Kfunc(scampr_K_obs, scampr_K_env)
-Kfunc(glm_K_obs, glm_K_env)
-Kfunc(glmnet_K_obs, glmnet_K_env)
-```
-
 
 
 ```{r penalised glm with loop to convergence, Zulambda}
@@ -460,4 +654,3 @@ Kfunc(glmnet_K_obs, glmnet_K_env)
 c(loglik_new_gam, loglik_new_scampr, loglik_new_glm, loglik_new_glmnet)
 c(pred_gam, pred_scampr, pred_glm, pred_glmnet)
 ```
-

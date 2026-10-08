@@ -5,6 +5,359 @@ date: "2026-09-27"
 editor_options: 
   chunk_output_type: console
 ---
+```{r}
+library(disdat)
+library(mgcv)
+library(sf)
+library(spatstat)
+library(fields)
+library(tmap)
+library(grid)
+library(units)
+library(stringr)
+library(dplyr)
+library(glmnet)
+library(scampr)
+#install.packages("glmmTMB_1.1.9-9000.tar.gz",  repos = NULL, type = "source")
+library(glmmTMB)
+set.seed(0)
+
+# Get the data
+source("get_and_format_flora_data.R")
+rm(dat_pa)
+
+# Optional predictor subsets
+# preds <- switch(pred_set,
+#                 A = "None",
+#                 B = c("mi", "tempann"),
+#                 C = c("mi", "tempann", "mi2", "tempann2"),
+# )
+
+
+# Get a vector of the factor terms
+facts <- c("disturb", "soilfert", "vegsis")
+
+# Load the species information
+load("flora_species.RDATA")
+
+# Retain selected flora groups
+flora_groups <- unique(sp.info$group)
+pres <- pres[pres$group %in% flora_groups, ]
+
+# Keep species with at least 10 presences
+pres <- pres[pres$spid %in% names(table(pres$spid))[table(pres$spid) >= 10], ]
+
+# Retained species
+species <- unique(pres$spid)
+
+# Dimensions
+m <- length(species) # responses
+q <- nrow(quad) # quadrature points
+
+# One set of quadrature points for all species
+quad$spid <- rep(NA, q) 
+
+dat <- rbind(pres, quad)
+n <- nrow(dat)
+
+# Replicate quadrature points for each species
+quad_rep <- quad[rep(seq_len(q), m), ]
+quad_rep$spid <- rep(species, each = q) # assign the species id's
+
+dat_rep = rbind(pres, quad_rep)
+
+# Preserve lon/lat and use model coordinates as x/y
+dat$lon <- dat$x; dat$lat <- dat$y; dat$x <- dat$xm; dat$y <- dat$ym; dat$xm <- NULL; dat$ym <- NULL
+dat_rep$lon <- dat_rep$x; dat_rep$lat <- dat_rep$y; dat_rep$x <- dat_rep$xm; dat_rep$y <- dat$ym; dat_rep$xm <- NULL; dat_rep$ym <- NULL
+
+load("domain.RDATA")
+domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
+
+gc()
+```
+
+
+```{r}
+# Remove formula environments before saving
+rm.env <- function(m) {
+  attr(attr(m$frame, "terms"), ".Environment") <- NULL
+  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
+  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
+  m
+}
+```
+
+
+```{r Build spatial basis functions}
+bfs <- make_basis(k = 50, domain, from.package = "scampr")
+
+# Pruning basis functions with zero support
+if (is(bfs, "scampr.bf")) {
+  tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")])) # via the data?
+#  tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
+  bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
+  bfs <- bfs[bf.check != 0, ]
+  rm(tmp, bf.check)
+}
+
+# Evaluate basis functions at data locations
+Z_star = bf_matrix(bfs, dat[, c("x", "y")])
+#Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
+
+# Indexing
+pres_rows = seq_len(nrow(pres))
+quad_rows = nrow(pres) + seq_len(nrow(quad))
+                 
+Z_pres = Z_star[pres_rows, , drop = FALSE]
+Z_quad = Z_star[quad_rows, , drop = FALSE]
+
+n_species = length(species)
+Z_quad_rep = Z_quad[rep(seq_len(nrow(Z_quad)), n_species), , drop = FALSE]
+Z_row = rbind(Z_pres, Z_quad_rep)
+```
+
+
+
+```{r Fitting - alternating column/row updates (single latent spatial factor)}
+
+ridgePen=1 #penalty strength
+
+### standardise X's up here to variance of one ###
+
+# Initialise shared latent spatial field coefficients (u), one per basis function
+u = rnorm(ncol(Z_star), 0, 1)
+
+# Convert species IDs to numeric
+dat_rename = dat_rep %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+
+pres_spid = as.numeric(str_extract(pres$spid, "\\d+"))
+
+attach(dat_rename)
+
+# Shared spatial field
+Z_pres_u = Z_pres %*% u 
+Z_quad_u = Z_quad %*% u 
+
+chosen_spid = unique(pres_spid)
+
+# Fixed-effect design matrix
+X_full = cbind(1, mi, tempann) 
+X_pres_full = cbind(1, pres$mi, pres$tempann)
+X_quad_full = cbind(1, quad$mi, quad$tempann)
+
+# Store species-specific intercepts, slopes and loadings
+beta_lambda = matrix(0,  nrow = n_species, ncol = ncol(Z_pres_u) + ncol(X_pres_full))
+
+# Row indices for each species
+#rows_by_species = split(seq_len(nrow(dat_rename)), spid)
+rows_by_species = split(seq_len(nrow(pres)), spid)
+
+# Species index for each row
+species_idx_pres = match(pres_spid, chosen_spid)
+species_idx_row = match(spid, chosen_spid)
+
+# Outer (column-update + row-update) iterations
+N = 100
+loglik = -Inf
+
+# Species-specific warm starts
+warm_start = vector("list", n_species)
+
+# Penalise only the spatial loading
+penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) #cases exist where algorithm diverges
+
+time_i = system.time({for (iter in 1:N){
+# Covariates and current spatial field
+  X_pres_Zu = cbind(X_pres_full[, -1], Z_pres_u)
+  X_quad_Zu = cbind(X_quad_full[, -1], Z_quad_u)
+
+# Species update: for each species, fit fixed effects + basis-function loadings (lambda)
+
+  for (j in seq_along(chosen_spid)){
+    i = chosen_spid[j]
+    idx = rows_by_species[[as.character(i)]]
+    
+    # Species-specific design matrix
+    X_i = as.matrix(rbind(X_pres_Zu[idx, ], X_quad_Zu))
+    # Species-specific responses
+    y_i = c(dat$occ[idx]/dat$wt[idx], rep(0, nrow(quad)))
+    # Species-specific weights
+    w_i = c(dat$wt[idx], quad$wt)
+    
+    # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
+    glmnet1 = glmnet:::glmnet.fit(y = y_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor)#, maxit = nGlmnetIter)
+    
+    # Store this species' intercept + beta + lambda (1 loading)
+    beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
+
+    # Update warm start
+    warm_start[[j]] = list(a0 = glmnet1$a0, beta = as.numeric(glmnet1$beta))
+  }
+
+  # Split fitted coefficients into fixed effects (beta) and loadings (lambda)
+  beta_lambda
+  beta = beta_lambda[, 1:ncol(X_pres_full)]
+  lambda = as.matrix(beta_lambda[, (ncol(X_pres_full) + 1):ncol(beta_lambda)])
+  
+  # Expand loadings to observation rows
+  lambda_rep = lambda[species_idx_row, , drop = TRUE]
+  
+  # Fixed-effect linear predictor
+  offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
+
+  # Shared-field design matrix
+  X_joint = Z_row * lambda_rep
+  attr(X_joint, "xm") = rep(0, ncol(X_joint))
+  attr(X_joint, "xs") = rep(1, ncol(X_joint))
+ 
+  # Joint ridge update for u
+  glmnet1 = glmnet:::glmnet.fit(x = X_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)))#, maxit = nGlmnetIter) 
+  
+  # Update shared-field coefficients
+  new_u = as.numeric(glmnet1$beta)
+  u = new_u
+  print(u)
+  
+  # Recompute shared spatial field with updated u, for next iteration's column update
+  Z_pres_u = Z_pres %*% u 
+  Z_quad_u = Z_quad %*% u
+  
+  # Full linear predictor
+  eta = offset + (Z_row * lambda_rep) %*% u
+  mu = exp(eta)
+  pred_mglmnet_oneq = mu
+  
+  # Weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+  loglik_new_mglmnet_oneq = sum(occ * log(mu) - wt * mu)
+  cat("iter", iter, "loglik:", loglik_new_mglmnet_oneq, "\n")
+  
+  # Stop once relative change in log-likelihood is small
+  if (is.finite(loglik) && abs(loglik_new_mglmnet_oneq - loglik)/ max(1, abs(loglik_new_mglmnet_oneq)) < 1e-6) break
+  loglik = loglik_new_mglmnet_oneq}
+})
+
+save(loglik_new_mglmnet_oneq, file = "loglik_new_mglmnet_oneq.RDATA")
+
+time_mglmnet_oneq = as.numeric(time_i[3])
+time_mglmnet_oneq
+save(time_mglmnet_oneq, file = "time_mglmnet_oneq.RDATA")
+```
+
+
+```{r Intensity map for a chosen species}
+# Prediction design matrices
+X_domain = cbind(1, domain$mi, domain$tempann)
+Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
+
+# Shared spatial field on prediction domain
+Zu_domain = Z_domain_star %*% u
+
+# Select species
+target_species_id <- 19
+j = match(target_species_id, chosen_spid)
+
+# Fitted log intensity
+sp_fld_glmnet = X_domain %*% beta[j, ] + Zu_domain %*% lambda[j, ]
+domain$log_intensity = as.numeric(sp_fld_glmnet[, 1])
+
+# Convert prediction grid to stars object
+library(stars)
+domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
+grid_pred_lonlat = domain_stars
+
+# Presence points for selected species
+species_points = dat_rename[dat_rename$spid == target_species_id & dat_rename$occ == 1, ]
+species_points_lonlat = st_as_sf(species_points, coords = c("lon", "lat"), crs = 4326)
+
+# Study-region boundary
+border_lonlat = disBorder("NSW")
+
+# Drawing map
+tmap_mode("plot")
+
+glmnet_m_oneq_map = m_intensity_map(grid_pred_lonlat, species_label = 19)
+print(glmnet_m_oneq_map)
+save(glmnet_m_oneq_map, file = "glmnet_m_oneq_map.RDATA")
+```
+
+
+```{r Inhomogeneous K functions}
+#diagnostic for the chosen species, target_species_id
+
+#Calculate observed, simulated K functions
+
+#prediction grid, drop old "z" column, then re-attach this species' own z
+domain.grid = subset(grid_xy, select = -z)
+#predict intensity values for this species at every grid cell
+domain.grid$z = grid_xy$z
+
+#parameter values - this species' own 43 basis-function loading
+lambda_j = lambda[species_idx, ]
+
+#variance of the shared latent spatial field coefficients u (assumed common across all 43 basis functions)
+var_u = 1/ridgePen
+
+#per-basis-function variance of this species' realised spatial contribution (u_k * lambda_jk):
+#Var(u_k * lambda_jk) = lambda_jk^2 * Var(u_k), lambda_jk fixed, known
+vars <- rep(var_u, m.lgcp_lp$basis.per.res)
+
+#propagate variance through basis functions at every grid location - Var(sum_k Z_k(loc) * u_k * lambda_jk) = sum_k Z_k(loc)^2 * Var(u_k * lambda_jk)
+var_smooth_grid <- drop((Z_grid_star * lambda_j)^2 %*% vars)
+
+#average propagated variance
+var_smooth = mean(var_smooth_grid)
+#var_smooth = var(drop(Z_grid_star%*%u)) #Z_grid_star
+
+#this species' fixed-effect-only linear predictor - used as mean
+domain.grid$mean = drop(X_grid%*%beta[species_idx, ])
+
+#build observation window in same centred/rescaled km coordinate system used throughout
+border_km = st_union(st_geometry(border_proj))/1000
+st_crs(border_km) = NA
+win = as.owin(st_sf(geometry = border_km))
+
+#convert fixed-effect surface and full fitted intensity surface into spatstat pixel images
+fixed.im = as.im(domain.grid[, c("x", "y", "mean")], W = win)
+#converted predicted intensity value into spatstat pixel images
+pred.im = as.im(domain.grid[,c("x","y","z")], W = win)
+
+#simulate the envelopes/bounds
+
+#rename presence_df's spid to match dat_rename's convention, then subset to just this species' own presence locations
+pres_df_rename = presence_df %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+sp_presence_df = pres_df_rename[pres_df_rename$spid == target_species_id, ]
+# build species' point pattern within study window
+po_sp_ppp = ppp(x = sp_presence_df$x,
+                y = sp_presence_df$y,
+                window = win)
+
+#load("opt.RDATA")
+
+#observed inhomogeneous K-function for this species, using its fitted intensity surface
+glmnet_m_oneq_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
+#simulate comparison point patterns from a log-Gaussian Cox process
+glmnet_m_oneq_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1]))) #sqrt(3)*opt$minimum
+
+#produce graphs
+load("Kfunc.RDATA")
+glmnet_m_oneq_kfunc = Kfunc(glmnet_m_oneq_K_obs, glmnet_m_oneq_K_env)
+```
+
+
+
+
+
+
+
+
+
+
 
 ```{r Data Preprocessing}
 library(disdat)
@@ -410,4 +763,8 @@ glmnet_m_oneq_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(r
 load("Kfunc.RDATA")
 glmnet_m_oneq_kfunc = Kfunc(glmnet_m_oneq_K_obs, glmnet_m_oneq_K_env)
 ```
+
+
+
+
 

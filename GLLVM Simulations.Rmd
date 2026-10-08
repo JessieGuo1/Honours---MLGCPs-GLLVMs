@@ -59,7 +59,7 @@ glvm = function(Y, X, l.v., B){
   return(list(time = time, KL = KL, time_int = time_int, KL_int = KL_int, loglik_new_all = loglik_new_all, loglik_all = loglik_all))
 }
 
-gllvm_sim_1 = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 100)
+#gllvm_sim_1 = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 1, 100)
 save(gllvm_sim_1, file = "gllvm_sim_1.RDATA")
 
 load("gllvm_sim_1.RDATA")
@@ -74,7 +74,7 @@ gllvm_sim_1$loglik_all
 
 
 ```{r running gllvm 2 l.v.}
-gllvm_sim_2 = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 100)
+#gllvm_sim_2 = glvm(microbial[, 1:200], scale(Xenv[, 1:2]), l.v. = 2, 100)
 save(gllvm_sim_2, file = "gllvm_sim_2.RDATA")
 
 load("gllvm_sim_2.RDATA")
@@ -371,7 +371,7 @@ lv_chen = function(Y, X, l.v., B, K, u_all){
   return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int, loglik_all = loglik_all, loglik_new_all = loglik_new_all))
 } 
 
-jmle_sim_1 = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 1, B = 100, K = 1, u_all = as.matrix(rnorm(56, 0, 1)))
+#jmle_sim_1 = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 1, B = 100, K = 1, u_all = as.matrix(rnorm(56, 0, 1)))
 save(jmle_sim_1, file = "jmle_sim_1.RDATA")
 
 load("jmle_sim_1.RDATA")
@@ -386,7 +386,7 @@ jmle_sim_1$loglik_new_all
 
 
 ```{r alternating glms, 2 l.v. updating through constraints -- Chen}
-jmle_sim_2 = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, K = 2, u_all = mvrnorm(56, c(0, 0), diag(2)))
+#jmle_sim_2 = lv_chen(Y = as.matrix(df_noXenv[, 1:200]), X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, K = 2, u_all = mvrnorm(56, c(0, 0), diag(2)))
 save(jmle_sim_2, file = "jmle_sim_2.RDATA")
 
 load("jmle_sim_2.RDATA")
@@ -473,7 +473,7 @@ pen_glm = function(Y, X, l.v., B, u, K){
   return(list(time = time, KL = KL, ite_converge_all = ite_converge_all, time_int = time_int, KL_int = KL_int, loglik_new_all = loglik_new_all))
 }
 
-glmnet_sim_1 = pen_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 1, B = 100, u = as.matrix(rnorm(56, 0, 1)), K = 1)
+#glmnet_sim_1 = pen_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 1, B = 100, u = as.matrix(rnorm(56, 0, 1)), K = 1)
 save(glmnet_sim_1, file = "glmnet_sim_1.RDATA")
 
 load("glmnet_sim_1.RDATA")
@@ -488,7 +488,7 @@ glmnet_sim_1$loglik_new_all
 
 
 ```{r glmnet - penalty on lambda and u using 2 l.v.}
-glmnet_sim_2 = pen_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), K = 1)
+#glmnet_sim_2 = pen_glm(Y = microbial[, 1:200], X = scale(Xenv[, 1:2]), l.v. = 2, B = 100, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), K = 1)
 save(glmnet_sim_2, file = "glmnet_sim_2.RDATA")
 
 load("glmnet_sim_2.RDATA")
