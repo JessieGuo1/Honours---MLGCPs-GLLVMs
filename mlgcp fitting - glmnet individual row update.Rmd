@@ -150,10 +150,10 @@ loglik = -Inf
 warm_start = vector("list", n_species)
 
 # Factor warm starts
-warm_start_u = vector("list", nrow(as.matrix(u))) #cases exist where algorithm diverges or takes too long
+#warm_start_u = vector("list", nrow(as.matrix(u))) #cases exist where algorithm diverges or takes too long
 
 # Penalise only the spatial loading
-#penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) #cases exist where algorithm diverges
+penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) #cases exist where algorithm diverges
 
 time_i = system.time({for (iter in 1:N){
 
@@ -170,7 +170,7 @@ time_i = system.time({for (iter in 1:N){
     X_i = X_Zu[idx, ]
     
     # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
-    glmnet1 = glmnet:::glmnet.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, alpha = 0, lambda = ridgePen, warm = warm_start[[j]])#, penalty.factor = penalty_factor)#, maxit = nGlmnetIter)
+    glmnet1 = glmnet:::glmnet.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, alpha = 0, lambda = ridgePen, warm = warm_start[[j]], penalty.factor = penalty_factor)#, maxit = nGlmnetIter)
     
     # Store this species' intercept + beta + lambda (1 loading)
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
@@ -178,6 +178,8 @@ time_i = system.time({for (iter in 1:N){
     # Update warm start
     warm_start[[j]] = list(a0 = glmnet1$a0, beta = as.numeric(glmnet1$beta))
   }
+  
+  # (beta updates) u = u + (new_u - u)*u_shrink (<1)
   
   # Split fitted coefficients into fixed effects (beta) and loadings (lambda)
   beta_lambda
@@ -197,16 +199,16 @@ time_i = system.time({for (iter in 1:N){
   
   # Ridge update for u
   for (i in 1:nrow(new_u)){
-    glmnet1 = glmnet:::glmnet.fit(x = X_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = warm_start_u[[i]]) 
+    glmnet1 = glmnet:::glmnet.fit(x = X_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen)#, warm = warm_start_u[[i]]) 
     
     # Update shared-field coefficients
     new_u[i, ] = t(as.numeric(glmnet1$beta))
     
     # Update warm start
-    warm_start_u[[i]] = list(a0 = 0, beta = as.numeric(glmnet1$beta))
+#    warm_start_u[[i]] = list(a0 = 0, beta = as.numeric(glmnet1$beta))
    }
 
-  u = new_u
+  u = new_u #u = su + (new_u - u)*u_shrink (<1)
   print(u)
   
   # Recompute shared spatial field with updated u, for next iteration's column update
@@ -364,6 +366,10 @@ load("glmnet_m_map.RDATA")
 load("glmnet_m_oneq_map.RDATA")
 load("glmnet_m_individ_row_map.RDATA")
 load("glmnet_mlgcp_map.RDATA")
+load("gam_map.RDATA")
+load("scampr_map.RDATA")
+load("glm_map.RDATA")
+load("glmnet_map.RDATA")
 
 tmap_arrange(
   glmnet_m_map,
