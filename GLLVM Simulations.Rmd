@@ -620,6 +620,8 @@ save(time_all_glmnet1, KL_all_glmnet1, ite_converge_all_glmnet1, loglik_new_all_
 
 
 ```{r glmnet - penalty on lambda and u using 2 l.v. Error: inner loop 3; cannot correct step size at k = 7}
+# Generating model with 2 latent variables
+
 load("model_pred_2.RDATA")
 load("sim_counts_all_2.RDATA")
 
