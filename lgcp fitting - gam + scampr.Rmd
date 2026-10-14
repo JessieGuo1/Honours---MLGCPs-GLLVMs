@@ -280,7 +280,7 @@ save(scampr_map, file = "scampr_map.RDATA")
 #                               nsims = 1000, # change to 1000 to replicate results presented in paper
 #                               return.data = T)
 
-# Variance of shared latent spatial field coefficients u, common across all basis functions, ridge penalty -> precision
+# Variance of shared latent spatial field coefficients u, common across all basis functions
 var_u = m.lgcp_lp$prior.variances[, "Estimate"]
 
 # Per-basis-function variance
