@@ -270,7 +270,7 @@ fixed = X_domain_j %*% beta_fixed
 spatial = as.numeric(sp_fld[, 1])
 
 domain$log_intensity = fixed + spatial
-domain$intensity = exp(domain$log_intensity)
+
 library(stars)
 domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
 grid_pred_lonlat = domain_stars
@@ -286,6 +286,64 @@ load("m_intensity_map.RDATA")
 glmnet_mlgcp_map = m_intensity_map(grid_pred_lonlat, species_label = 19)
 print(glmnet_mlgcp_map)
 save(glmnet_mlgcp_map, file = "glmnet_mlgcp_map.RDATA")
+
+
+
+#Inhomogeneous K func
+# Diagnostic for chosen species, target_species_id
+# Calculate observed, simulated inhomogeneous K functions
+# Select species
+
+domain_j$response.id = domain_j$spid
+# Propagate variance of spatially varying term through smoothed terms at every grid location
+eta_full = predict(mB1, newdata = domain_j, type = "link", re.form = NULL) #re.form controls whether random effects included, NULL = include
+eta_fixed = predict(mB1, newdata = domain_j, type = "link", re.form = NA) 
+spatial = eta_full - eta_fixed
+var_spatial = var(spatial)
+
+# This species' fixed-effect linear predictor - used as mean
+domain$mean = fixed
+
+domain$intensity = exp(domain$log_intensity)
+
+# Build observation window in same coordinate system used throughout
+border_xy = st_transform(border_lonlat, crs = 28356)
+# Convert projected coordinates to kilometres to match domain$x/y/xm/ym
+border_geom = st_union(st_geometry(border_xy)) / 1000
+# Remove CRS metadata for spatstat
+st_crs(border_geom) = NA
+win = as.owin(st_sf(geometry = border_geom))
+
+# Convert fixed-effect log-intensity surface and full fitted intensity surface into spatstat pixel images
+fixed.im = as.im(domain[, c("x", "y", "mean")], W = win)
+pred.im = as.im(domain[, c("x","y","intensity")], W = win)
+
+# Rename pres_df's spid to match dat_rename's convention, then subset to just this species' own presence locations
+pres_df_rename = pres %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+sp_presence_df = pres_df_rename[pres_df_rename$spid == target_species_id, ]
+
+# Build species' point pattern within study window using same kilometre-scale as win
+po_sp_ppp = ppp(x = sp_presence_df$xm,
+                y = sp_presence_df$ym,
+                window = win)
+
+#load("opt.RDATA")
+
+# Observed inhomogeneous K-function for this species, using its fitted intensity surface
+mlgcp_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
+
+# Simulate comparison point patterns from a Matern log-Gaussian Cox process and construct simulation envelope
+mlgcp_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = bfs$scale[1])))
+
+# Plot observed K-function and simulation envelope
+load("Kfunc.RDATA")
+Kfunc(mlgcp_K_obs, mlgcp_K_env)
+mlgcp_kfunc = recordPlot()
+save(mlgcp_kfunc, file = "mlgcp_kfunc.RDATA")
+
+load("mlgcp_kfunc.RDATA")
+replayPlot(mlgcp_kfunc)
 
 
 
