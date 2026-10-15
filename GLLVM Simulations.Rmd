@@ -201,7 +201,7 @@ KL_int_glm1
 ```
 
 
-```{r alternating glms using 2 l.v. Error: Loglikelihood is infinite at k = 7}
+```{r alternating glms using 2 l.v.}
 # Generating model with 2 latent variables
 # look into katana for computation clusters 
 library(MASS)
@@ -323,7 +323,7 @@ loglik_new_all_jmle2 = rep(NA, B)
 X = scale(Xenv[, 1:2])
 
 for (k in 1:B){
-  jmle_sim_2 = lv_chen(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(56, c(0, 0), diag(2)), K = 2, N = 200)
+  jmle_sim_2 = lv_chen(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(56, c(0, 0), diag(2)), K = 2, N = 1000)
   
   save(jmle_sim_2, file = file.path("jmle_models", paste0("jmle_sim_2_", k, ".RDATA")))
 
