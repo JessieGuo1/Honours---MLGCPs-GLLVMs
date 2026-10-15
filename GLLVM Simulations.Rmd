@@ -373,14 +373,14 @@ X = scale(Xenv[, 1:2])
 for (k in 1:B){ 
   glmnet_sim_1 = try(pen_glm(sim_counts = sim_counts_all[ , k, ], X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200), silent = TRUE)
 
-  if (inherits(glmnet_sim_2, "try-error")) {
+  if (inherits(glmnet_sim_1, "try-error")) {
   cat("Simulation", k, "failed:\n",
-      as.character(glmnet_sim_2),
+      as.character(glmnet_sim_1),
       "\n")
-    ite_converge_all_glmnet2[k] = NA
-    time_all_glmnet2[k] = NA
-    KL_all_glmnet2[k] = NA
-    loglik_new_all_glmnet2[k] = NA
+    ite_converge_all_glmnet1[k] = NA
+    time_all_glmnet1[k] = NA
+    KL_all_glmnet1[k] = NA
+    loglik_new_all_glmnet1[k] = NA
     
     next
   }
