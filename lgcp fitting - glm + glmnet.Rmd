@@ -226,8 +226,6 @@ po_sp_ppp = ppp(x = pres$x,
                 y = pres$y,
                 window = win)
 
-#load("opt.RDATA")
-
 # Observed inhomogeneous K-function for this species, using its fitted intensity surface
 glm_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
 

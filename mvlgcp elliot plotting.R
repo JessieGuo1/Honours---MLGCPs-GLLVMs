@@ -74,7 +74,7 @@ if (is(bfs, "scampr.bf")) {
   bfs <- bfs[bf.check != 0, ]
   rm(tmp, bf.check)
 }
-rm(pres, quad)
+
 gc()
 
 ################################################################################
@@ -82,37 +82,36 @@ gc()
 ################################################################################
 
 # need a function to strip environments from the model objects so they can be saved without being massive
-rm.env <- function(m) {
-  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-  m
-}
+#rm.env <- function(m) {
+#  attr(attr(m$frame, "terms"), ".Environment") <- NULL
+#  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
+#  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
+#  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
+#  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
+#  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
+#  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
+#  m
+#}
 
 ################################################################################
 # Fit the model including linear env terms #####################################
 ################################################################################
 
 # with correlated fields only ##################################################
-
 time_i = system.time({try(assign("mB1", mvlgcp(occ ~ 0 + spid + spid:mi + spid:tempann,
-                         data = dat, weights = dat$wt, basis.functions = bfs, response.id = dat$spid, n_factors = d,
+                         data = dat, weights = wt, basis.functions = bfs, response.id = spid, n_factors = d,
                          control = glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)), mv.flds = "correlated")
 ))})
 
 # save if the model fitted
 if (exists("mB1")) {
   print("mB1 converged without start parameters (attempt 1)")
-  mB1 <- rm.env(mB1)
+#  mB1 <- rm.env(mB1)
   mB1$start.pars <- "cold"
   save(mB1, file = paste0(getwd(), "/models/mB1_", job, ".RDATA"))
 }
 
-pred_mlgcp = predict(mB1, type = "response")
+pred_mlgcp = predict(mB1, type = "response", re.form = NA)
 
 loglik_new_mlgcp = sum(dat$occ * log(pred_mlgcp) - dat$wt * pred_mlgcp)
 save(loglik_new_mlgcp, file = "loglik_new_mlgcp.RDATA")

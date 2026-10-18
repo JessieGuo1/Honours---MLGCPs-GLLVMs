@@ -109,9 +109,9 @@ if (is(bfs, "scampr.bf")) {
 }
 
 #evaluate basis functions at every data point
-#Z_star = bf_matrix(bfs, dat[, c("x", "y")])
+Z_star = bf_matrix(bfs, dat[, c("x", "y")])
 #Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
-#save(Z_star, file = "Z_star.RDATA")
+save(Z_star, file = "Z_star.RDATA")
 load("Z_star.RDATA")
 
 ```
@@ -140,8 +140,9 @@ new_u = matrix(NA, nrow = ncol(Z_star), ncol = 1)
 rows_by_species = split(seq_len(nrow(dat_rename)), spid)
 species_idx_row = match(spid, chosen_spid)
 
-N = 100
+N = 1000
 loglik = -Inf
+max_it = 3
 
 time_i = system.time({for (iter in 1:N){
   
@@ -159,7 +160,7 @@ time_i = system.time({for (iter in 1:N){
         NULL
         }
 
-    glm1 = glm.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE)#, start = start_iter)#, control = glm.control(maxit = 25))
+    glm1 = glm.fit(y = occ[idx]/wt[idx], x = X_i, family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, start = start_iter, control = glm.control(maxit = max_it))
     
     # store this species' intercept + beta + lambda (1 loading)
     beta_lambda[j, ] = t(c(glm1$coefficients))  
@@ -168,7 +169,7 @@ time_i = system.time({for (iter in 1:N){
   #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
   beta_lambda
   beta = beta_lambda[, 1:ncol(X_full)] #54 x 4
-  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #54 x 1
+  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)])
   
   lambda_rep = lambda[species_idx_row, , drop = TRUE]
 
@@ -177,13 +178,17 @@ time_i = system.time({for (iter in 1:N){
   X_joint = Z_star * lambda_rep
   
   for (i in 1:nrow(new_u)){
+    other_spatial = X_joint %*% u - X_joint[, i, drop = FALSE] %*% u[i, , drop = FALSE]
+    
     start_iter_u = if (all(is.finite(u[i, ]))) {
     u[i, ]} else {
       NULL
     }
-    glm1 = glm.fit(x = X_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset))#, start = start_iter_u)#, control = glm.control(maxit=25))
+    
+    offset_i = offset + other_spatial
+    glm1 = glm.fit(x = X_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.matrix(offset_i), start = start_iter_u, control = glm.control(maxit = max_it))
   new_u[i, ] = t(as.numeric(glm1$coefficients))
-#  u[i, ] = new_u[i, ]
+  u[i, ] = new_u[i, ]
   }
   
   u = new_u
@@ -237,9 +242,10 @@ border_lonlat = disBorder("NSW")
 
 tmap_mode("plot")
 
-glm_m_map = m_intensity_map(grid_pred_lonlat, species_label = 19)
-print(glm_m_map)
-save(glm_m_map, file = "glm_m_map.RDATA")
+load("m_intensity_map.RDATA")
+glm_m_individ_row_map = m_intensity_map(grid_pred_lonlat, species_label = 19)
+print(glm_m_individ_row_map)
+save(glm_m_individ_row_map, file = "glm_m_individ_row_map.RDATA")
 ```
 
 

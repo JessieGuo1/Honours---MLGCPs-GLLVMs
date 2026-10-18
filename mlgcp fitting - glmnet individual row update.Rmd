@@ -114,7 +114,7 @@ ridgePen=1 #penalty strength
 ### standardise X's up here to variance of one ###
 
 # Initialise shared latent spatial field coefficients (u), one per basis function
-u = rnorm(ncol(Z_star), 0, 1)
+u = as.matrix(rnorm(ncol(Z_star), 0, 1))
 
 # Convert species IDs to numeric
 dat_rename = dat %>% 
@@ -150,7 +150,7 @@ loglik = -Inf
 warm_start = vector("list", n_species)
 
 # Factor warm starts
-#warm_start_u = vector("list", nrow(as.matrix(u))) #cases exist where algorithm diverges or takes too long
+warm_start_u = vector("list", nrow(as.matrix(u))) #cases exist where algorithm diverges or takes too long
 
 # Penalise only the spatial loading
 penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) #cases exist where algorithm diverges
@@ -199,16 +199,16 @@ time_i = system.time({for (iter in 1:N){
   
   # Ridge update for u
   for (i in 1:nrow(new_u)){
-    glmnet1 = glmnet:::glmnet.fit(x = X_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen)#, warm = warm_start_u[[i]]) 
+    glmnet1 = glmnet:::glmnet.fit(x = X_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = warm_start_u[[i]]) 
     
     # Update shared-field coefficients
     new_u[i, ] = t(as.numeric(glmnet1$beta))
     
     # Update warm start
-#    warm_start_u[[i]] = list(a0 = 0, beta = as.numeric(glmnet1$beta))
+    warm_start_u[[i]] = list(a0 = 0, beta = as.numeric(glmnet1$beta))
    }
 
-  u = new_u #u = su + (new_u - u)*u_shrink (<1)
+  u = u + (new_u - u)*1/4
   print(u)
   
   # Recompute shared spatial field with updated u, for next iteration's column update
