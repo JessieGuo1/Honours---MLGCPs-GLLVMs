@@ -236,7 +236,7 @@ save(glm_m_map, file = "glm_m_map.RDATA")
 
 
 
-```{r Inhomogeneous K functions}
+```{r Inhomogeneous K functions Error : vector memory limit of 16.0 Gb reached, see mem.maxVSize() retrying}
 # Diagnostic for chosen species, target_species_id
 # Calculate observed, simulated inhomogeneous K functions
 
@@ -294,7 +294,7 @@ replayPlot(glm_m_kfunc)
 ```
 
 
-```{r Inhomogeneous K functions}
+```{r Inhomogeneous K functions vector memory limit, 113641 out of 587016 terms (19.4%) in FFT calculation of matrix square root were negative, and were set to zero}
 # Diagnostic for chosen species, target_species_id
 # Calculate observed, simulated inhomogeneous K functions
 

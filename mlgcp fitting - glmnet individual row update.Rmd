@@ -362,6 +362,9 @@ replayPlot(glmnet_m_individ_row_kfunc)
 #graphics.off()
 tmap_mode("plot")
 
+load("glm_m_map.RDATA")
+load("glm_m_oneq_map.RDATA")
+load("glm_m_individ_row_map.RDATA")
 load("glmnet_m_map.RDATA")
 load("glmnet_m_oneq_map.RDATA")
 load("glmnet_m_individ_row_map.RDATA")
@@ -370,6 +373,14 @@ load("gam_map.RDATA")
 load("scampr_map.RDATA")
 load("glm_map.RDATA")
 load("glmnet_map.RDATA")
+
+tmap_arrange(
+  glm_m_map,
+  glm_m_oneq_map,
+  glm_m_individ_row_map,
+  glmnet_mlgcp_map,
+  nrow = 1
+)
 
 tmap_arrange(
   glmnet_m_map,
@@ -388,23 +399,31 @@ tmap_arrange(
   scampr_map,
   glm_map,
   glmnet_map,
-  nrow = 2
+  glm_m_map,
+  glm_m_oneq_map,
+  glm_m_individ_row_map,  
+  nrow = 3
 )
 
-
+load("time_mglm.RDATA")
+load("time_mglm_oneq.RDATA")
+load("time_mglm_individ_row.RDATA")
 load("time_mglmnet.RDATA")
 load("time_mglmnet_oneq.RDATA")
 load("time_mglmnet_individ_row.RDATA")
 load("time_mlgcp.RDATA")
 
-c(time_mglmnet, time_mglmnet_oneq, time_mglmnet_individ_row, time_mlgcp)
+c(time_mglm, time_mglm_oneq, time_mglm_individ_row, time_mglmnet, time_mglmnet_oneq, time_mglmnet_individ_row, time_mlgcp)
 
+load("loglik_new_mglm.RDATA")
+load("loglik_new_mglm_oneq.RDATA")
+load("loglik_new_mglm_individ_row.RDATA")
 load("loglik_new_mglmnet.RDATA")
 load("loglik_new_mglmnet_oneq.RDATA")
 load("loglik_new_mglmnet_individ_row.RDATA")
 load("loglik_new_mlgcp.RDATA")
 
-c(loglik_new_mglmnet, loglik_new_mglmnet_oneq, loglik_new_mglmnet_individ_row, loglik_new_mlgcp)
+c(loglik_new_mglm, loglik_new_mglm_oneq, loglik_new_mglm_individ_row, loglik_new_mglmnet, loglik_new_mglmnet_oneq, loglik_new_mglmnet_individ_row, loglik_new_mlgcp)
 
 ```
 
