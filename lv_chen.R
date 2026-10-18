@@ -2,6 +2,7 @@
 lv_chen = function(sim_counts, X, u, K, N){
 
   c = 5 * sqrt(K) # constraint radius
+  max_it = 3
   
   # Storage for projected updates
   beta_proj = matrix(NA, nrow = ncol(sim_counts), ncol = 1 + ncol(X)) 
@@ -59,11 +60,11 @@ lv_chen = function(sim_counts, X, u, K, N){
         for (i in 1:nrow(sim_counts)) {
           
           # Fit u with offset 
-          glm1 = try(glm.fit(y = sim_counts[i, ], x = as.matrix(lambda_proj), intercept = FALSE, family = poisson(link = "log"), offset = offset[i, ], control = glm.control(maxit = max_it), start = as.numeric(u[i, ])), silent = TRUE)
+          glm1 = try(glm.fit(y = sim_counts[i, ], x = lambda_proj, intercept = FALSE, family = poisson(link = "log"), offset = offset[i, ], control = glm.control(maxit = max_it), start = as.numeric(u[i, ])), silent = TRUE)
           
           if (inherits(glm1, "try-error") || 
               any(!is.finite(glm1$coefficients))) {
-            glm1 = glm.fit(y = sim_counts[i, ], x = as.matrix(lambda_proj), intercept = FALSE, family = poisson(link = "log"), offset = offset[i, ], control = glm.control(maxit = max_it), start = NULL)
+            glm1 = glm.fit(y = sim_counts[i, ], x = lambda_proj, intercept = FALSE, family = poisson(link = "log"), offset = offset[i, ], control = glm.control(maxit = max_it), start = NULL)
           }
           
           new_u = as.matrix(t(glm1$coefficients))

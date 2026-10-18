@@ -40,17 +40,17 @@ B = 100
 # Generating model with 1 latent variable
 # Fit original microbial dataset with 1 l.v.
 
-model_pred = model_and_pred(Y = microbial[, 1:200], X = as.matrix(scale(Xenv[, 1:2])), l.v. = 1) 
-save(model_pred, file = "model_pred.RDATA")
+#model_pred = model_and_pred(Y = microbial[, 1:200], X = as.matrix(scale(Xenv[, 1:2])), l.v. = 1) 
+#save(model_pred, file = "model_pred.RDATA")
 load("model_pred.RDATA")
 
 # Generate B simulated datasets conditionally on l.v. from fitted generating model
 # Simulations stored as stacked 56 x 200 datasets
 
-sim_counts_all = simulate(model_pred$true_model, nsim = B, conditional = TRUE) #turn into 3D array 
-sim_counts_all = array(sim_counts_all, dim = c(nRow = 56, nsim = B, nVar = 200))
+#sim_counts_all = simulate(model_pred$true_model, nsim = B, conditional = TRUE) #turn into 3D array 
+#sim_counts_all = array(sim_counts_all, dim = c(nRow = 56, nsim = B, nVar = 200))
 
-save(sim_counts_all, file = "sim_counts_all.RDATA")
+#save(sim_counts_all, file = "sim_counts_all.RDATA")
 load("sim_counts_all.RDATA")
 
 # Create folder where fitted gllvms are stored
@@ -64,6 +64,7 @@ loglik_new_all_gllvm1 = rep(NA, B) #conditional Poisson log-likelihood
 X = scale(Xenv[, 1:2])
 # No. of l.v.
 l.v. = 1
+set.seed(0)
 
 # Refit gllvm with 1 l.v. to each simulated dataset
 for (k in 1:B){
@@ -73,24 +74,29 @@ for (k in 1:B){
   # Save fitted GLLVM from each simulation 
   save(gllvm_sim_1, file = file.path("gllvm_models", paste0("gllvm_sim_1_", k, ".RDATA")))
 
-  # Obtain fitted conditional means from refitted model
-  pred_counts = predict(gllvm_sim_1, type = 'response', lv.pred = TRUE) #account for latent variable
-  # Fitted Poisson mean
-  mu = pred_counts
   # Conditional means from original generating model
   true_mu = model_pred$pred_counts
   
+  # Obtain fitted Poisson conditional means from refitted model
+  pred_mu = predict(gllvm_sim_1, type = 'response', lv.pred = TRUE) #account for latent variable
+  
+  mu = pred_mu
+  
+  # 'log(mu)'
+  eta = predict(gllvm_sim_1, type = 'link', lv.pred = TRUE) 
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+
   # Store summary quantities
   time_all_gllvm1[k] = as.numeric(time_i[3])
-  KL_all_gllvm1[k] = sum(true_mu*(log(true_mu) - log(pred_counts)) - (true_mu - pred_counts)) 
+  KL_all_gllvm1[k] = KL
   loglik_new_all_gllvm1[k] = sum(dpois(sim_counts_all[ , k, ], lambda = mu, log = TRUE)) # treats u as fixed parameters 
 #  loglik_builtin_all_gllvm1[k] = gllvm_sim_1$logL #treats u as latent variables where integral needs to be marginalised over u
 }
 
 # Mean, standard deviation of fitting time
-time_int_gllvm1 = c(mean(time_all_gllvm1), sqrt(var(time_all_gllvm1)))
+time_int_gllvm1 = c(mean(time_all_gllvm1, na.rm = TRUE), sqrt(var(time_all_gllvm1, na.rm = TRUE)))
 # Mean, standard deviation of KL divergence
-KL_int_gllvm1 = c(mean(KL_all_gllvm1), sqrt(var(KL_all_gllvm1)))
+KL_int_gllvm1 = c(mean(KL_all_gllvm1, na.rm = TRUE), sqrt(var(KL_all_gllvm1, na.rm = TRUE)))
 
 save(time_all_gllvm1, KL_all_gllvm1, loglik_new_all_gllvm1, time_int_gllvm1, KL_int_gllvm1, file = file.path("gllvm_models", "gllvm1_summary.RDATA"))
 load(file.path("gllvm_models", "gllvm1_summary.RDATA"))
@@ -105,44 +111,48 @@ KL_int_gllvm1
 ```{r running gllvm 2 l.v.}
 
 # Generating model with 2 latent variables
-model_pred_2 = model_and_pred(Y = microbial[, 1:200], X = as.matrix(scale(Xenv[, 1:2])), l.v. = 2) 
-save(model_pred_2, file = "model_pred_2.RDATA")
+#model_pred_2 = model_and_pred(Y = microbial[, 1:200], X = as.matrix(scale(Xenv[, 1:2])), l.v. = 2) 
+#save(model_pred_2, file = "model_pred_2.RDATA")
 load("model_pred_2.RDATA")
 
-sim_counts_all_2 = simulate(model_pred_2$true_model, nsim = B, conditional = TRUE)
-sim_counts_all_2 = array(sim_counts_all_2, dim = c(nRow = 56, nsim = B, nVar = 200))
-save(sim_counts_all_2, file = "sim_counts_all_2.RDATA")
+#sim_counts_all_2 = simulate(model_pred_2$true_model, nsim = B, conditional = TRUE)
+#sim_counts_all_2 = array(sim_counts_all_2, dim = c(nRow = 56, nsim = B, nVar = 200))
+#save(sim_counts_all_2, file = "sim_counts_all_2.RDATA")
 load("sim_counts_all_2.RDATA")
 
 time_all_gllvm2 = rep(NA, B)
 KL_all_gllvm2 = rep(NA, B)
 loglik_new_all_gllvm2 = rep(NA, B)
+X = scale(Xenv[, 1:2])
 l.v. = 2
+set.seed(0)
 
-for (k in 1:B){
+for (k in 3:B){
   time_i = system.time({
     gllvm_sim_2 = gllvm(y = sim_counts_all_2[ , k, ], X = X, num.lv = l.v., family = poisson(link = 'log'), method = "LA")}) 
   
   save(gllvm_sim_2, file = file.path("gllvm_models", paste0("gllvm_sim_2_", k, ".RDATA")))
 
-  pred_counts = predict(gllvm_sim_2, type = 'response', lv.pred = TRUE) #account for latent variable
-  mu = pred_counts
   true_mu = model_pred_2$pred_counts
+  pred_mu = predict(gllvm_sim_2, type = 'response', lv.pred = TRUE) #account for latent variable
+  mu = pred_mu
+  eta = predict(gllvm_sim_2, type = 'link', lv.pred = TRUE) 
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
   
   time_all_gllvm2[k] = as.numeric(time_i[3])
-  KL_all_gllvm2[k] = sum(true_mu*(log(true_mu) - log(pred_counts)) - (true_mu - pred_counts)) 
+  KL_all_gllvm2[k] = KL
   loglik_new_all_gllvm2[k] = sum(dpois(sim_counts_all_2[ , k, ], lambda = mu, log = TRUE))
 }
 
-time_int_gllvm2 = c(mean(time_all_gllvm2), sqrt(var(time_all_gllvm2)))
-KL_int_gllvm2 = c(mean(KL_all_gllvm2), sqrt(var(KL_all_gllvm2)))
+time_int_gllvm2 = c(mean(time_all_gllvm2, na.rm = TRUE), sqrt(var(time_all_gllvm2, na.rm = TRUE)))
+KL_int_gllvm2 = c(mean(KL_all_gllvm2, na.rm = TRUE), sqrt(var(KL_all_gllvm2, na.rm = TRUE)))
 
 save(time_all_gllvm2, KL_all_gllvm2, loglik_new_all_gllvm2, time_int_gllvm2, KL_int_gllvm2, file = file.path("gllvm_models", "gllvm2_summary.RDATA"))
+
 load(file.path("gllvm_models", "gllvm2_summary.RDATA"))
 time_all_gllvm2
 KL_all_gllvm2
 loglik_new_all_gllvm2
-
 time_int_gllvm2
 KL_int_gllvm2
 ```
@@ -152,7 +162,7 @@ KL_int_gllvm2
 ```{r alternating glms using 1 l.v.}
 # Number of simulated datasets
 B = 100
-max_it = 3
+
 # Load fitted generating model, B simulated datasets as conacatenated 56 x 200 blocks
 load("model_pred.RDATA")
 load("sim_counts_all.RDATA")
@@ -167,10 +177,23 @@ KL_all_glm1 = rep(NA, B)
 ite_converge_all_glm1 = rep(NA, B)
 loglik_new_all_glm1 = rep(NA, B)
 X = scale(Xenv[, 1:2])
+set.seed(0)
 
 for (k in 1:B){ #start here for function - input Y, X
-  glm_sim_1 = alt_glm(sim_counts = sim_counts_all[ , k, ], X = X, u = as.matrix(rnorm(56, 0, 1)), N = 100)
+  glm_sim_1 = try(alt_glm(sim_counts = sim_counts_all[ , k, ], X = X, u = as.matrix(rnorm(56, 0, 1)), N = 100), silent = TRUE)
   
+    if (inherits(glm_sim_1, "try-error")) {
+  cat("Simulation", k, "failed:\n",
+      as.character(glm_sim_1),
+      "\n")
+    ite_converge_all_glm1[k] = NA
+    time_all_glm1[k] = NA
+    KL_all_glm1[k] = NA
+    loglik_new_all_glm1[k] = NA
+    
+    next
+    }
+    
   save(glm_sim_1, file = file.path("glm_models", paste0("glm_sim_1_", k, ".RDATA")))
   true_mu = model_pred$pred_counts
   pred_mu = glm_sim_1$pred_counts
@@ -184,8 +207,8 @@ for (k in 1:B){ #start here for function - input Y, X
 }
 
 # Mean, standard deviation across simulations
-time_int_glm1 = c(mean(time_all_glm1), sqrt(var(time_all_glm1)))
-KL_int_glm1 = c(mean(KL_all_glm1), sqrt(var(KL_all_glm1)))
+time_int_glm1 = c(mean(time_all_glm1, na.rm = TRUE), sqrt(var(time_all_glm1, na.rm = TRUE)))
+KL_int_glm1 = c(mean(KL_all_glm1, na.rm = TRUE), sqrt(var(KL_all_glm1, na.rm = TRUE)))
 
 #way of storing each model -- use debugger after lik
 
@@ -205,7 +228,7 @@ KL_int_glm1
 # Generating model with 2 latent variables
 # look into katana for computation clusters 
 library(MASS)
-
+set.seed(0)
 load("model_pred_2.RDATA")
 load("sim_counts_all_2.RDATA")
 
@@ -213,22 +236,24 @@ time_all_glm2 = rep(NA, B)
 KL_all_glm2 = rep(NA, B)
 ite_converge_all_glm2 = rep(NA, B)
 loglik_new_all_glm2 = rep(NA, B)
+X = scale(Xenv[, 1:2])
+set.seed(0)
 
 for (k in 1:B){ #start here for function - input Y, X
   glm_sim_2 = try(alt_glm(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 200), silent = TRUE) 
   
-    if (inherits(glm_sim_2, "try-error")) {
-    cat("Simulation", k, "failed:\n",
-        as.character(glm_sim_2),
-        "\n")
-      ite_converge_all_glm2[k] = NA
-      time_all_glm2[k] = NA
-      KL_all_glm2[k] = NA
-      loglik_new_all_glm2[k] = NA
-      
-      next
+  if (inherits(glm_sim_2, "try-error")) {
+  cat("Simulation", k, "failed:\n",
+      as.character(glm_sim_2),
+      "\n")
+    ite_converge_all_glm2[k] = NA
+    time_all_glm2[k] = NA
+    KL_all_glm2[k] = NA
+    loglik_new_all_glm2[k] = NA
+    
+    next
     }
-  
+
   save(glm_sim_2, file = file.path("glm_models", paste0("glm_sim_2_", k, ".RDATA")))
   
   true_mu = model_pred_2$pred_counts
@@ -262,7 +287,6 @@ KL_int_glm2
 ```{r alternating glms, 1 l.v. updating through constraints -- Chen Error in if (sqrt(sum(y^2)) <= c) return(y) missing value where TRUE/FALSE needed k = 13}
 
 B = 100
-max_it = 10
 
 # Load generating model, simulated datasets
 load("model_pred.RDATA")
@@ -278,9 +302,10 @@ KL_all_jmle1 = rep(NA, B)
 ite_converge_all_jmle1 = rep(NA, B)
 loglik_new_all_jmle1 = rep(NA, B)
 X = scale(Xenv[, 1:2])
+set.seed(0)
 
 for (k in 1:B){
-  jmle_sim_1 = lv_chen(sim_counts = sim_counts_all[ , k, ], X = X, u = as.matrix(rnorm(56, 0, 1)), K = 1, N = 1000)
+  jmle_sim_1 = lv_chen(sim_counts = sim_counts_all[ , k, ], X = X, u = as.matrix(rnorm(56, 0, 1)), K = ncol(sim_counts), N = 1000)
   
   save(jmle_sim_1, file = file.path("jmle_models", paste0("jmle_sim_1_", k, ".RDATA")))
   
@@ -297,8 +322,8 @@ for (k in 1:B){
 }  
 
 # Mean, standard deviation across simulations 
-time_int_jmle1 = c(mean(time_all_jmle1), sqrt(var(time_all_jmle1)))
-KL_int_jmle1 = c(mean(KL_all_jmle1), sqrt(var(KL_all_jmle1)))
+time_int_jmle1 = c(mean(time_all_jmle1, na.rm = TRUE), sqrt(var(time_all_jmle1, na.rm = TRUE)))
+KL_int_jmle1 = c(mean(KL_all_jmle1, na.rm = TRUE), sqrt(var(KL_all_jmle1, na.rm = TRUE)))
 
 save(time_all_jmle1, KL_all_jmle1, ite_converge_all_jmle1, loglik_new_all_jmle1, time_int_jmle1, KL_int_jmle1, file = file.path("jmle_models", "jmle1_summary.RDATA"))
 load(file.path("jmle_models", "jmle1_summary.RDATA"))
@@ -321,10 +346,23 @@ KL_all_jmle2 = rep(NA, B)
 ite_converge_all_jmle2 = rep(NA, B)
 loglik_new_all_jmle2 = rep(NA, B)
 X = scale(Xenv[, 1:2])
+set.seed(0)
 
 for (k in 1:B){
-  jmle_sim_2 = lv_chen(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(56, c(0, 0), diag(2)), K = 2, N = 1000)
+  jmle_sim_2 = try(lv_chen(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(56, c(0, 0), diag(2)), K = ncol(sim_counts), N = 1000), silent = TRUE)
   
+  if (inherits(jmle_sim_2, "try-error")) {
+cat("Simulation", k, "failed:\n",
+    as.character(jmle_sim_2),
+    "\n")
+  ite_converge_all_jmle2[k] = NA
+  time_all_jmle2[k] = NA
+  KL_all_jmle2[k] = NA
+  loglik_new_all_jmle2[k] = NA
+  
+  next
+  }
+
   save(jmle_sim_2, file = file.path("jmle_models", paste0("jmle_sim_2_", k, ".RDATA")))
 
   true_mu = model_pred_2$pred_counts
@@ -338,8 +376,8 @@ for (k in 1:B){
   loglik_new_all_jmle2[k] = jmle_sim_2$loglik_new
 }  
 
-time_int_jmle2 = c(mean(time_all_jmle2), sqrt(var(time_all_jmle2)))
-KL_int_jmle2 = c(mean(KL_all_jmle2), sqrt(var(KL_all_jmle2)))
+time_int_jmle2 = c(mean(time_all_jmle2, na.rm = TRUE), sqrt(var(time_all_jmle2, na.rm = TRUE)))
+KL_int_jmle2 = c(mean(KL_all_jmle2, na.rm = TRUE), sqrt(var(KL_all_jmle2, na.rm = TRUE)))
 
 save(time_all_jmle2, KL_all_jmle2, ite_converge_all_jmle2, loglik_new_all_jmle2, time_int_jmle2, KL_int_jmle2, file = file.path("jmle_models", "jmle2_summary.RDATA"))
 load(file.path("jmle_models", "jmle2_summary.RDATA"))
@@ -369,6 +407,7 @@ KL_all_glmnet1 = rep(NA, B)
 ite_converge_all_glmnet1 = rep(NA, B)
 loglik_new_all_glmnet1 = rep(NA, B)
 X = scale(Xenv[, 1:2])
+set.seed(0)
 
 for (k in 1:B){ 
   glmnet_sim_1 = try(pen_glm(sim_counts = sim_counts_all[ , k, ], X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200), silent = TRUE)
@@ -399,8 +438,8 @@ for (k in 1:B){
 }
 
 # Mean, standard deviation across simulations
-time_int_glmnet1 = c(mean(time_all_glmnet1), sqrt(var(time_all_glmnet1)))
-KL_int_glmnet1 = c(mean(KL_all_glmnet1), sqrt(var(KL_all_glmnet1)))
+time_int_glmnet1 = c(mean(time_all_glmnet1, na.rm = TRUE), sqrt(var(time_all_glmnet1, na.rm = TRUE)))
+KL_int_glmnet1 = c(mean(KL_all_glmnet1, na.rm = TRUE), sqrt(var(KL_all_glmnet1, na.rm = TRUE)))
 
 save(time_all_glmnet1, KL_all_glmnet1, ite_converge_all_glmnet1, loglik_new_all_glmnet1, time_int_glmnet1, KL_int_glmnet1, file = file.path("glmnet_models", "glmnet1_summary.RDATA"))
 
@@ -425,21 +464,22 @@ KL_all_glmnet2 = rep(NA, B)
 ite_converge_all_glmnet2 = rep(NA, B)
 loglik_new_all_glmnet2 = rep(NA, B)
 X = scale(Xenv[, 1:2])
+set.seed(0)
 
 for (k in 1:B){#'try' fitting for the dataset, dont simulate another dataset if statement: iter_converge_all = NA, etc. otherwise keep going for other datasets
   glmnet_sim_2 = try(pen_glm(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 400), silent = TRUE)
   
-    if (inherits(glmnet_sim_2, "try-error")) {
-      cat("Simulation", k, "failed:\n",
-          as.character(glmnet_sim_2),
-          "\n")
-        ite_converge_all_glmnet2[k] = NA
-        time_all_glmnet2[k] = NA
-        KL_all_glmnet2[k] = NA
-        loglik_new_all_glmnet2[k] = NA
-        
-        next
-    }
+  if (inherits(glmnet_sim_2, "try-error")) {
+    cat("Simulation", k, "failed:\n",
+        as.character(glmnet_sim_2),
+        "\n")
+      ite_converge_all_glmnet2[k] = NA
+      time_all_glmnet2[k] = NA
+      KL_all_glmnet2[k] = NA
+      loglik_new_all_glmnet2[k] = NA
+      
+      next
+      }
   
   save(glmnet_sim_2, file = file.path("glmnet_models", paste0("glmnet_sim_2_", k, ".RDATA")))
 
@@ -463,6 +503,225 @@ time_all_glmnet2
 KL_all_glmnet2
 ite_converge_all_glmnet2
 loglik_new_all_glmnet2
+time_int_glmnet2
+KL_int_glmnet2
+```
+
+
+
+```{r Plotting}
+library(ggplot2)
+B = 100
+load(file.path("gllvm_models", "gllvm1_summary.RDATA"))
+load(file.path("gllvm_models", "gllvm2_summary.RDATA"))
+load(file.path("glm_models", "glm1_summary.RDATA"))
+load(file.path("glm_models", "glm2_summary.RDATA"))
+load(file.path("jmle_models", "jmle1_summary.RDATA"))
+load(file.path("jmle_models", "jmle2_summary.RDATA"))
+load(file.path("glmnet_models", "glmnet1_summary.RDATA"))
+load(file.path("glmnet_models", "glmnet2_summary.RDATA"))
+
+df = data.frame(method = factor(rep(c("gllvm","glm","jmle", "glmnet"), each = B), levels = c("gllvm","glm","jmle", "glmnet")),
+                         KL1 = c(KL_all_gllvm1, KL_all_glm1, KL_all_jmle1, KL_all_glmnet1),
+                         time1 = c(time_all_gllvm1, time_all_glm1, time_all_jmle1, time_all_glmnet1),
+                         KL2 = c(KL_all_gllvm2, KL_all_glm2, KL_all_jmle2, KL_all_glmnet2),
+                         time2 = c(time_all_gllvm2, time_all_glm2, time_all_jmle2, time_all_glmnet2))
+
+sim_plot = function(y, ylab, title, ylim = NULL){
+  g = ggplot(data = df, aes(x = method, y = {{y}}, color = method)) + 
+  ylab(ylab) + xlab("") +
+  ggtitle(title) + 
+  guides(color = FALSE) +
+  geom_boxplot(lwd = 0.5, fill = NA) +
+  coord_cartesian(ylim = ylim) +
+  scale_y_continuous(n.breaks = 10) + 
+  theme_bw()
+}
+
+g = sim_plot(y = KL1, ylab = "KL Divergence (1 l.v.)", title = "KL Divergence for 1 latent variable", ylim = c(300, 1000))
+print(g)
+ggsave("figures/sim-KLD1.png", width = 4, height = 6)
+
+g = sim_plot(y = time1, ylab = "Computation Time (s)", title = "Computation time for 1 latent variable (s)", ylim = c(0, 40))
+g
+ggsave("figures/sim-time1.png", width = 4, height = 6)
+
+g = sim_plot(y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(450, 1000))
+g
+ggsave("figures/sim-KLD2.png", width = 4, height = 6)
+
+g = sim_plot(y = time2, ylab = "Computation Time (s)", title = "Computation time for 2 latent variable (s)", ylim = c(0, 150))
+g
+ggsave("figures/sim-time2.png", width = 4, height = 6)
+
+```
+```{r Counting Outliers}
+outlier_count = function(x) {
+  bp = boxplot.stats(x)
+  bp$out
+  length(bp$out)
+}
+out_ct_time1 = outlier_count(df$time1[df$method == "gllvm"])
+out_ct_time2 = outlier_count(df$time2[df$method == "gllvm"])
+out_ct_KL1 = outlier_count(df$KL1[df$method == "gllvm"])
+out_ct_KL2 = outlier_count(df$KL2[df$method == "gllvm"])
+
+cat("gllvm: ", "times: ", out_ct_time1, out_ct_time2, "KL:", out_ct_KL1, out_ct_KL2, "\n")
+
+out_ct_time1 = outlier_count(df$time1[df$method == "glm"])
+out_ct_time2 = outlier_count(df$time2[df$method == "glm"])
+out_ct_KL1 = outlier_count(df$KL1[df$method == "glm"])
+out_ct_KL2 = outlier_count(df$KL2[df$method == "glm"])
+
+cat("glm: ", "times: ", out_ct_time1, out_ct_time2, "KL:", out_ct_KL1, out_ct_KL2, "\n")
+
+out_ct_time1 = outlier_count(df$time1[df$method == "jmle"])
+out_ct_time2 = outlier_count(df$time2[df$method == "jmle"])
+out_ct_KL1 = outlier_count(df$KL1[df$method == "jmle"])
+out_ct_KL2 = outlier_count(df$KL2[df$method == "jmle"])
+
+cat("jmle: ", "times: ", out_ct_time1, out_ct_time2, "KL:", out_ct_KL1, out_ct_KL2, "\n")
+
+out_ct_time1 = outlier_count(df$time1[df$method == "glmnet"])
+out_ct_time2 = outlier_count(df$time2[df$method == "glmnet"])
+out_ct_KL1 = outlier_count(df$KL1[df$method == "glmnet"])
+out_ct_KL2 = outlier_count(df$KL2[df$method == "glmnet"])
+
+cat("glmnet: ", "times: ", out_ct_time1, out_ct_time2, "KL:", out_ct_KL1, out_ct_KL2, "\n")
+```
+
+```{r Range of loglik}
+a = range(loglik_new_all_gllvm1)
+b = range(loglik_new_all_gllvm2)
+c = range(loglik_new_all_glm1)
+d = range(loglik_new_all_glm2, na.rm = TRUE)
+e = range(loglik_new_all_jmle1)
+f = range(loglik_new_all_jmle2, na.rm = TRUE)
+g = range(loglik_new_all_glmnet1, na.rm = TRUE)
+h = range(loglik_new_all_glmnet2)
+
+range(a, b, c, d, e, f, g, h)
+
+which.max(c(a, b, c, d, e, f, g, h))
+```
+
+
+```{r GLLVM KL trimmed outliers for mean, sd}
+x = df$KL1[df$method == "gllvm"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_gllvm1_trim = KL_all_gllvm1[KL_all_gllvm1 >= stats[1] & KL_all_gllvm1 <= stats[5]]
+
+# Mean, standard deviation of KL divergence
+KL_int_gllvm1 = c(mean(KL_all_gllvm1_trim, na.rm = TRUE), sqrt(var(KL_all_gllvm1_trim, na.rm = TRUE)))
+
+time_int_gllvm1
+KL_int_gllvm1
+```
+
+```{r }
+x = df$KL2[df$method == "gllvm"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_gllvm2_trim = KL_all_gllvm2[KL_all_gllvm2 >= stats[1] & KL_all_gllvm2 <= stats[5]]
+
+# Mean, standard deviation of KL divergence
+KL_int_gllvm2 = c(mean(KL_all_gllvm2_trim, na.rm = TRUE), sqrt(var(KL_all_gllvm2_trim, na.rm = TRUE)))
+
+time_int_gllvm2
+KL_int_gllvm2
+```
+
+```{r GLM KL trimmed outliers for mean, sd}
+x = df$KL1[df$method == "glm"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_glm1_trim = KL_all_glm1[KL_all_glm1 >= stats[1] & KL_all_glm1 <= stats[5]]
+
+# Mean, standard deviation of KL divergence
+KL_int_glm1 = c(mean(KL_all_glm1_trim, na.rm = TRUE), sqrt(var(KL_all_glm1_trim, na.rm = TRUE)))
+
+time_int_glm1
+KL_int_glm1
+```
+
+```{r}
+x = df$KL2[df$method == "glm"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_glm2_trim = KL_all_glm2[KL_all_glm1 >= stats[1] & KL_all_glm2 <= stats[5]]
+
+# Mean, standard deviation of KL divergence
+KL_int_glm2 = c(mean(KL_all_glm2_trim, na.rm = TRUE), sqrt(var(KL_all_glm2_trim, na.rm = TRUE)))
+
+time_int_glm2
+KL_int_glm2
+```
+
+```{r JMLE KL trimmed outliers for mean, sd}
+x = df$KL1[df$method == "jmle"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_jmle1_trim = KL_all_jmle1[KL_all_jmle1 >= stats[1] & KL_all_jmle1 <= stats[5]]
+
+# Mean, standard deviation of KL divergence
+KL_int_jmle1 = c(mean(KL_all_jmle1_trim, na.rm = TRUE), sqrt(var(KL_all_jmle1_trim, na.rm = TRUE)))
+
+time_int_jmle1
+KL_int_jmle1
+```
+
+```{r}
+x = df$KL2[df$method == "jmle"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_jmle2_trim = KL_all_jmle2[KL_all_jmle2 >= stats[1] & KL_all_jmle2 <= stats[5]]
+
+# Mean, standard deviation of KL divergence
+KL_int_jmle2 = c(mean(KL_all_jmle2_trim, na.rm = TRUE), sqrt(var(KL_all_jmle2_trim, na.rm = TRUE)))
+
+time_int_jmle2
+KL_int_jmle2
+```
+
+```{r GLMNET KL trimmed outliers for mean, sd}
+x = df$KL1[df$method == "glmnet"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_glmnet1_trim = KL_all_glmnet1[KL_all_glmnet1 >= stats[1] & KL_all_glmnet1 <= stats[5]]
+
+# Mean, standard deviation across simulations
+KL_int_glmnet1 = c(mean(KL_all_glmnet1_trim, na.rm = TRUE), sqrt(var(KL_all_glmnet1_trim, na.rm = TRUE)))
+
+time_int_glmnet1
+KL_int_glmnet1
+```
+
+```{r}
+x = df$KL2[df$method == "glmnet"]
+stats = boxplot.stats(x)$stats
+# Lower, upper whiskers
+stats[c(1, 5)]
+
+KL_all_glmnet2_trim = KL_all_glmnet2[KL_all_glmnet2 >= stats[1] & KL_all_glmnet2 <= stats[5]]
+
+# Mean, standard deviation across simulations
+KL_int_glmnet2 = c(mean(KL_all_glmnet2, na.rm = TRUE), sqrt(var(KL_all_glmnet2, na.rm = TRUE)))
+
 time_int_glmnet2
 KL_int_glmnet2
 ```

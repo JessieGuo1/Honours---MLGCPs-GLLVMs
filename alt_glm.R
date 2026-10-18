@@ -50,7 +50,7 @@ alt_glm = function(sim_counts, X, u, N){
       for (i in 1:nrow(sim_counts)){
         
         glm1 = try(
-          glm.fit(y = as.numeric(sim_counts[i, ]), x = lambda, intercept = FALSE, family=poisson(link='log'), offset = offset[i, ], control = glm.control(maxit = max_it), start = as.numeric(u[i, ])), silent = TRUE)  #invalid type without as.numeric
+          glm.fit(y = sim_counts[i, ], x = lambda, intercept = FALSE, family=poisson(link='log'), offset = offset[i, ], control = glm.control(maxit = max_it), start = as.numeric(u[i, ])), silent = TRUE)  #invalid type without as.numeric
         # Fallback for when warm-started fit fails
         if (inherits(glm1, "try-error") ||
             any(!is.finite(glm1$coefficients))) {
@@ -68,7 +68,7 @@ alt_glm = function(sim_counts, X, u, N){
       mu = exp(eta)
       pred_counts_i = mu
       
-      loglik_new = sum(dpois(as.matrix(sim_counts), lambda = mu, log = TRUE))
+      loglik_new = sum(dpois(sim_counts, lambda = mu, log = TRUE))
       # Convergence check
       if (is.finite(loglik) && is.finite(loglik_new)) {
         rel_change = abs(loglik_new - loglik)/ max(1, abs(loglik_new))
