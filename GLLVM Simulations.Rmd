@@ -284,7 +284,7 @@ KL_int_glm2
 ```
 
 
-```{r alternating glms, 1 l.v. updating through constraints -- Chen Error in if (sqrt(sum(y^2)) <= c) return(y) missing value where TRUE/FALSE needed k = 13}
+```{r alternating glms, 1 l.v. updating through constraints -- Chen}
 
 B = 100
 
