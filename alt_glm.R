@@ -5,6 +5,7 @@ alt_glm = function(sim_counts, X, u, N){
   loglik = -Inf
   new_X = cbind(1, X) #56 x 3
   beta_lambda = matrix(NA, nrow = ncol(sim_counts), ncol = 1 + ncol(X) + ncol(u)) # Preset matrix of coefficients including betas and lambdas, nrow = no. of columns in the responses, ncol = beta0, beta1, beta2, lambda
+  max_it = 3
   
   # Measure total elapsed fitting time
   time_i = system.time({

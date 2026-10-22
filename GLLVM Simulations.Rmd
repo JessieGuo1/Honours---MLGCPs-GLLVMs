@@ -508,6 +508,123 @@ KL_int_glmnet2
 ```
 
 
+```{r glmnet_maxit - penalty on lambda and u using 1 l.v.}
+B = 100
+library(glmnet)
+# Load generating model, simulated datasets
+load("model_pred.RDATA")
+load("sim_counts_all.RDATA")
+
+# Fit pen_glm to B simulated datasets
+dir.create("glmnet_models", showWarnings = TRUE)
+source("pen_glm_maxit.R")
+
+time_all_glmnet_maxit1 = rep(NA, B)
+KL_all_glmnet_maxit1 = rep(NA, B)
+ite_converge_all_glmnet_maxit1 = rep(NA, B)
+loglik_new_all_glmnet_maxit1 = rep(NA, B)
+X = scale(Xenv[, 1:2])
+set.seed(0)
+
+for (k in 1:B){ 
+  glmnet_maxit_sim_1 = try(pen_glm_maxit(sim_counts = sim_counts_all[ , k, ], X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200), silent = TRUE)
+
+  if (inherits(glmnet_maxit_sim_1, "try-error")) {
+  cat("Simulation", k, "failed:\n",
+      as.character(glmnet_maxit_sim_1),
+      "\n")
+    ite_converge_all_glmnet_maxit1[k] = NA
+    time_all_glmnet_maxit1[k] = NA
+    KL_all_glmnet_maxit1[k] = NA
+    loglik_new_all_glmnet_maxit1[k] = NA
+    
+    next
+  }
+  
+  save(glmnet_maxit_sim_1, file = file.path("glmnet_models", paste0("glmnet_maxit_sim_1_", k, ".RDATA")))
+
+  true_mu = model_pred$pred_counts
+  pred_mu = glmnet_maxit_sim_1$pred_counts
+  eta = glmnet_maxit_sim_1$eta
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+
+  ite_converge_all_glmnet_maxit1[k] = glmnet_maxit_sim_1$ite_converge
+  time_all_glmnet_maxit1[k] = glmnet_maxit_sim_1$time
+  KL_all_glmnet_maxit1[k] = KL
+  loglik_new_all_glmnet_maxit1[k] = glmnet_maxit_sim_1$loglik_new
+}
+
+# Mean, standard deviation across simulations
+time_int_glmnet_maxit1 = c(mean(time_all_glmnet_maxit1, na.rm = TRUE), sqrt(var(time_all_glmnet_maxit1, na.rm = TRUE)))
+KL_int_glmnet_maxit1 = c(mean(KL_all_glmnet_maxit1, na.rm = TRUE), sqrt(var(KL_all_glmnet_maxit1, na.rm = TRUE)))
+
+save(time_all_glmnet_maxit1, KL_all_glmnet_maxit1, ite_converge_all_glmnet_maxit1, loglik_new_all_glmnet_maxit1, time_int_glmnet_maxit1, KL_int_glmnet_maxit1, file = file.path("glmnet_models", "glmnet_maxit1_summary.RDATA"))
+
+load(file.path("glmnet_models", "glmnet_maxit1_summary.RDATA"))
+time_all_glmnet_maxit1
+KL_all_glmnet_maxit1
+ite_converge_all_glmnet_maxit1
+loglik_new_all_glmnet_maxit1
+time_int_glmnet_maxit1
+KL_int_glmnet_maxit1
+```
+
+
+```{r glmnet - penalty on lambda and u using 2 l.v. Error: inner loop 3; cannot correct step size at k = 7}
+# Generating model with 2 latent variables
+
+load("model_pred_2.RDATA")
+load("sim_counts_all_2.RDATA")
+
+time_all_glmnet_maxit2 = rep(NA, B)
+KL_all_glmnet_maxit2 = rep(NA, B)
+ite_converge_all_glmnet_maxit2 = rep(NA, B)
+loglik_new_all_glmnet_maxit2 = rep(NA, B)
+X = scale(Xenv[, 1:2])
+set.seed(0)
+
+for (k in 1:B){#'try' fitting for the dataset, dont simulate another dataset if statement: iter_converge_all = NA, etc. otherwise keep going for other datasets
+  glmnet_maxit_sim_2 = try(pen_glm_maxit(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 400), silent = TRUE)
+  
+  if (inherits(glmnet_maxit_sim_2, "try-error")) {
+    cat("Simulation", k, "failed:\n",
+        as.character(glmnet_maxit_sim_2),
+        "\n")
+      ite_converge_all_glmnet_maxit2[k] = NA
+      time_all_glmnet_maxit2[k] = NA
+      KL_all_glmnet_maxit2[k] = NA
+      loglik_new_all_glmnet_maxit2[k] = NA
+      
+      next
+      }
+  
+  save(glmnet_maxit_sim_2, file = file.path("glmnet_models", paste0("glmnet_maxit_sim_2_", k, ".RDATA")))
+
+  true_mu = model_pred_2$pred_counts
+  pred_mu = glmnet_maxit_sim_2$pred_counts
+  eta = glmnet_maxit_sim_2$eta
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+ 
+  ite_converge_all_glmnet_maxit2[k] = glmnet_maxit_sim_2$ite_converge
+  time_all_glmnet_maxit2[k] = glmnet_maxit_sim_2$time
+  KL_all_glmnet_maxit2[k] = KL
+  loglik_new_all_glmnet_maxit2[k] = glmnet_maxit_sim_2$loglik_new
+}
+
+time_int_glmnet_maxit2 = c(mean(time_all_glmnet_maxit2, na.rm = TRUE), sqrt(var(time_all_glmnet_maxit2, na.rm = TRUE)))
+KL_int_glmnet_maxit2 = c(mean(KL_all_glmnet_maxit2, na.rm = TRUE), sqrt(var(KL_all_glmnet_maxit2, na.rm = TRUE)))
+
+save(time_all_glmnet_maxit2, KL_all_glmnet_maxit2, ite_converge_all_glmnet_maxit2, loglik_new_all_glmnet_maxit2, time_int_glmnet_maxit2, KL_int_glmnet_maxit2, file = file.path("glmnet_models", "glmnet_maxit2_summary.RDATA"))
+load(file.path("glmnet_models", "glmnet_maxit2_summary.RDATA"))
+time_all_glmnet_maxit2
+KL_all_glmnet_maxit2
+ite_converge_all_glmnet_maxit2
+loglik_new_all_glmnet_maxit2
+time_int_glmnet_maxit2
+KL_int_glmnet_maxit2
+```
+
+
 
 ```{r Plotting}
 library(ggplot2)
