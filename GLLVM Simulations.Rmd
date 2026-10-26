@@ -655,11 +655,22 @@ sim_plot = function(y, ylab, title, ylim = NULL){
   theme_bw()
 }
 
+sim_log_plot = function(y, ylab, title, ylim = NULL){
+  g = ggplot(data = df, aes(x = method, y = {{y}}, color = method)) + 
+  ylab(ylab) + xlab("") +
+  ggtitle(title) + 
+  guides(color = FALSE) +
+  geom_boxplot(lwd = 0.5, fill = NA) +
+  coord_cartesian(ylim = ylim) +
+  scale_y_continuous(trans = "log", labels = scales::label_number(accuracy = 1)) + 
+  theme_bw()
+}
+
 g = sim_plot(y = KL1, ylab = "KL Divergence (1 l.v.)", title = "KL Divergence for 1 latent variable", ylim = c(300, 1000))
 print(g)
 ggsave("figures/sim-KLD1.png", width = 4, height = 6)
 
-g = sim_plot(y = time1, ylab = "Computation Time (s)", title = "Computation time for 1 latent variable (s)", ylim = c(0, 40))
+g = sim_log_plot(y = time1, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 1 latent variable (s)")#, ylim = c(0, 40))
 g
 ggsave("figures/sim-time1.png", width = 4, height = 6)
 
@@ -667,11 +678,13 @@ g = sim_plot(y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence fo
 g
 ggsave("figures/sim-KLD2.png", width = 4, height = 6)
 
-g = sim_plot(y = time2, ylab = "Computation Time (s)", title = "Computation time for 2 latent variable (s)", ylim = c(0, 150))
+g = sim_log_plot(y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
 g
 ggsave("figures/sim-time2.png", width = 4, height = 6)
 
 ```
+
+
 ```{r Counting Outliers}
 outlier_count = function(x) {
   bp = boxplot.stats(x)
@@ -842,4 +855,7 @@ KL_int_glmnet2 = c(mean(KL_all_glmnet2, na.rm = TRUE), sqrt(var(KL_all_glmnet2, 
 time_int_glmnet2
 KL_int_glmnet2
 ```
+
+
+
 
