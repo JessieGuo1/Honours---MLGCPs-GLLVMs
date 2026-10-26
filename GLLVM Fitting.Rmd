@@ -1,0 +1,530 @@
+---
+title: "GLLVM Fitting"
+output: html_document
+date: "2026-10-22"
+---
+
+```{r Data preparation}
+#install.packages("gllvm")
+library(gllvm)
+library(dplyr)
+#library(tidyverse)
+set.seed(0)
+data(microbialdata)
+microbial = data.frame(microbialdata)
+dim(microbial)
+
+Xenv = microbial[, 986:991]
+df_noXenv = microbial %>%  #no X variables 
+    dplyr::select(-(Xenv.SOM:Xenv.Soiltype))
+```
+
+
+```{r running gllvm 1 l.v.}
+# Create folder where fitted gllvms are stored
+dir.create("gllvm_models", showWarnings = TRUE)
+dir.create("gllvm_models/fitting", showWarnings = TRUE)
+
+# Environmental covariated used in each fitted model
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+# No. of l.v.
+l.v. = 1
+set.seed(0)
+
+# Refit gllvm with 1 l.v. to each simulated dataset
+time_i = system.time({
+  gllvm_1 = gllvm(y = Y, X = X, num.lv = l.v., family = poisson(link = 'log'), method = "LA")}) 
+
+# Save fitted GLLVM from each simulation 
+save(gllvm_1, file = file.path("gllvm_models/fitting", "gllvm_1.RDATA"))
+load("gllvm_models/fitting/gllvm_1.RDATA")
+# Obtain fitted Poisson conditional means from refitted model
+pred_mu_gllvm1 = predict(gllvm_1, type = 'response', lv.pred = TRUE) #account for latent variable
+
+mu = pred_mu_gllvm1
+
+# Store summary quantities
+time_gllvm1 = as.numeric(time_i[3])
+loglik_new_gllvm1 = sum(dpois(as.matrix(Y), lambda = mu, log = TRUE)) # treats u as fixed parameters 
+#  loglik_builtin_all_gllvm1[k] = gllvm_sim_1$logL #treats u as latent variables where integral needs to be marginalised over u
+
+save(time_gllvm1, loglik_new_gllvm1, file = file.path("gllvm_models/fitting", "gllvm1_summary.RDATA"))
+load(file.path("gllvm_models/fitting", "gllvm1_summary.RDATA"))
+time_gllvm1
+loglik_new_gllvm1
+```
+
+
+```{r running gllvm 2 l.v.}
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+l.v. = 2
+set.seed(0)
+
+
+time_i = system.time({
+  gllvm_2 = gllvm(y = Y, X = X, num.lv = l.v., family = poisson(link = 'log'), method = "LA")}) 
+
+save(gllvm_2, file = file.path("gllvm_models/fitting", "gllvm_2.RDATA"))
+load("gllvm_models/fitting/gllvm_2.RDATA")
+pred_mu_gllvm2 = predict(gllvm_2, type = 'response', lv.pred = TRUE) #account for latent variable
+mu = pred_mu_gllvm2
+
+time_gllvm2 = as.numeric(time_i[3])
+loglik_new_gllvm2 = sum(dpois(as.matrix(Y), lambda = mu, log = TRUE))
+
+save(time_gllvm2, loglik_new_gllvm2, file = file.path("gllvm_models/fitting", "gllvm2_summary.RDATA"))
+
+load(file.path("gllvm_models/fitting", "gllvm2_summary.RDATA"))
+time_gllvm2
+loglik_new_gllvm2
+```
+
+
+
+```{r alternating glms using 1 l.v.}
+# KL divergence should be outside
+# Fit alt_glm to B simulated datasets
+dir.create("glm_models", showWarnings = TRUE)
+dir.create("glm_models/fitting", showWarnings = TRUE)
+
+source("alt_glm.R")
+
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+glm_1 = alt_glm(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), N = 100)
+  
+save(glm_1, file = file.path("glm_models/fitting", "glm_1.RDATA"))
+load("glm_models/fitting/glm_1.RDATA")
+pred_mu_glm1 = glm_1$pred_counts
+
+time_glm1 = glm_1$time
+loglik_new_glm1 = glm_1$loglik_new
+
+save(time_glm1, loglik_new_glm1, file = file.path("glm_models/fitting", "glm1_summary.RDATA"))
+
+load(file.path("glm_models", "glm1_summary.RDATA"))
+time_glm1
+loglik_new_glm1
+```
+
+
+```{r alternating glms using 2 l.v.}
+# look into katana for computation clusters 
+library(MASS)
+
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+glm_2 = alt_glm(sim_counts = as.matrix(Y), X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 200)
+
+save(glm_2, file = file.path("glm_models/fitting", "glm_2.RDATA"))
+load("glm_models/fitting/glm_2.RDATA")
+pred_mu_glm2 = glm_2$pred_counts
+
+time_glm2 = glm_2$time
+loglik_new_glm2 = glm_2$loglik_new
+
+save(time_glm2, loglik_new_glm2, file = file.path("glm_models/fitting", "glm2_summary.RDATA"))
+
+load(file.path("glm_models/fitting", "glm2_summary.RDATA"))
+time_glm2
+loglik_new_glm2
+```
+
+
+```{r alternating glms, 1 l.v. updating through constraints -- Chen}
+# Fit lv_chen to B simulated datasets
+dir.create("jmle_models", showWarnings = TRUE)
+dir.create("jmle_models/fitting", showWarnings = TRUE)
+
+source("lv_chen.R")
+source("proc.R")
+
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+jmle_1 = lv_chen(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), K = ncol(sim_counts), N = 1000)
+
+save(jmle_1, file = file.path("jmle_models/fitting", "jmle_1.RDATA"))
+load("jmle_models/fitting/jmle_1.RDATA")
+pred_mu_jmle1 = jmle_1$pred_counts
+
+time_jmle1 = jmle_1$time
+loglik_new_jmle1 = jmle_1$loglik_new
+
+save(time_jmle1, loglik_new_jmle1, file = file.path("jmle_models/fitting", "jmle1_summary.RDATA"))
+load(file.path("jmle_models/fitting", "jmle1_summary.RDATA"))
+time_jmle1
+loglik_new_jmle1
+```
+
+
+```{r alternating glms, 2 l.v. updating through constraints -- Chen}
+library(MASS)
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+jmle_2 = lv_chen(sim_counts = as.matrix(Y), X = X, u = mvrnorm(56, c(0, 0), diag(2)), K = ncol(sim_counts), N = 1000)
+
+save(jmle_2, file = file.path("jmle_models/fitting", "jmle_2.RDATA"))
+load("jmle_models/fitting/jmle_2.RDATA")
+pred_mu_jmle2 = jmle_2$pred_counts
+
+time_jmle2 = jmle_2$time
+loglik_new_jmle2 = jmle_2$loglik_new
+
+save(time_jmle2, loglik_new_jmle2, file = file.path("jmle_models/fitting", "jmle2_summary.RDATA"))
+load(file.path("jmle_models/fitting", "jmle2_summary.RDATA"))
+time_jmle2
+loglik_new_jmle2
+```
+
+
+
+```{r glmnet - penalty on lambda and u using 1 l.v.}
+library(glmnet)
+# Fit pen_glm to B simulated datasets
+dir.create("glmnet_models", showWarnings = TRUE)
+dir.create("glmnet_models/fitting", showWarnings = TRUE)
+source("pen_glm.R")
+
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+glmnet_1 = pen_glm(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200)
+
+save(glmnet_1, file = file.path("glmnet_models/fitting", "glmnet_1.RDATA"))
+load("glmnet_models/fitting/glmnet_1.RDATA")
+pred_mu_glmnet1 = glmnet_1$pred_counts
+
+time_glmnet1 = glmnet_1$time
+loglik_new_glmnet1 = glmnet_1$loglik_new
+
+save(time_glmnet1, loglik_new_glmnet1, file = file.path("glmnet_models/fitting", "glmnet1_summary.RDATA"))
+
+load(file.path("glmnet_models/fitting", "glmnet1_summary.RDATA"))
+time_glmnet1
+loglik_new_glmnet1
+```
+
+
+
+```{r glmnet - penalty on lambda and u using 2 l.v. Error: inner loop 3; cannot correct step size at k = 7}
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+glmnet_2 = pen_glm(sim_counts = as.matrix(Y), X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 400)
+
+save(glmnet_2, file = file.path("glmnet_models/fitting", "glmnet_2.RDATA"))
+load("glmnet_models/fitting/glmnet_2.RDATA")
+pred_mu_glmnet2 = glmnet_2$pred_counts
+
+time_glmnet2 = glmnet_2$time
+loglik_new_glmnet2 = glmnet_2$loglik_new
+
+save(time_glmnet2, loglik_new_glmnet2, file = file.path("glmnet_models/fitting", "glmnet2_summary.RDATA"))
+load(file.path("glmnet_models/fitting", "glmnet2_summary.RDATA"))
+time_glmnet2
+loglik_new_glmnet2
+```
+
+
+
+```{r glmnet_maxit - penalty on lambda and u using 1 l.v.}
+library(glmnet)
+source("pen_glm_maxit.R")
+
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+glmnet_maxit_1 = pen_glm_maxit(sim_counts = Y, X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200)
+
+save(glmnet_maxit_1, file = file.path("glmnet_models/fitting", "glmnet_maxit_1.RDATA"))
+load("glmnet_models/fitting/glmnet_maxit_1.RDATA")
+pred_mu_glmnet_maxit1 = glmnet_maxit_1$pred_counts
+
+time_glmnet_maxit1 = glmnet_maxit_1$time
+loglik_new_glmnet_maxit1 = glmnet_maxit_1$loglik_new
+
+save(time_glmnet_maxit1, loglik_new_glmnet_maxit1, file = file.path("glmnet_models/fitting", "glmnet_maxit1_summary.RDATA"))
+
+load(file.path("glmnet_models/fitting", "glmnet_maxit1_summary.RDATA"))
+time_glmnet_maxit1
+loglik_new_glmnet_maxit1
+```
+
+
+
+
+```{r glmnet - penalty on lambda and u using 2 l.v. Error: inner loop 3; cannot correct step size at k = 7}
+X = scale(Xenv[, 1:2])
+Y = microbial[, 1:200]
+set.seed(0)
+
+glmnet_maxit_2 = pen_glm_maxit(sim_counts = Y, X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 400)
+
+save(glmnet_maxit_2, file = file.path("glmnet_models/fitting", "glmnet_maxit_2.RDATA"))
+load("glmnet_models/fitting/glmnet_maxit_2.RDATA")
+pred_mu_glmnet_maxit2 = glmnet_maxit_2$pred_counts
+
+time_glmnet_maxit2 = glmnet_maxit_2$time
+loglik_new_glmnet_maxit2 = glmnet_maxit_2$loglik_new
+
+save(time_glmnet_maxit2, loglik_new_glmnet_maxit2, file = file.path("glmnet_models/fitting", "glmnet_maxit2_summary.RDATA"))
+load(file.path("glmnet_models/fitting", "glmnet_maxit2_summary.RDATA"))
+time_glmnet_maxit2
+loglik_new_glmnet_maxit2
+```
+
+
+```{r Comparison between true and predicted counts}
+Y = microbial[, 1:200]
+ref = norm(as.matrix(Y), type = "F")
+
+#GLLVM 1 l.v.
+f_gllvm1 = norm(pred_mu_gllvm1, type = "F")
+
+#GLLVM 2 l.v.
+f_gllvm2 = norm(pred_mu_gllvm2, type = "F")
+
+#GLM 1 l.v.
+f_glm1 = norm(pred_mu_glm1, type = "F")
+
+#GLM 2 l.v.
+f_glm2 = norm(pred_mu_glm2, type = "F")
+
+#JMLE 1 l.v.
+f_jmle1 = norm(pred_mu_jmle1, type = "F")
+
+#JMLE 2 l.v.
+f_jmle2 = norm(pred_mu_jmle2, type = "F")
+
+#GLMNET 1 l.v.
+f_glmnet1 = norm(pred_mu_glmnet1, type = "F")
+
+#GLMNET 2 l.v.
+f_glmnet2 = norm(pred_mu_glmnet2, type = "F")
+
+
+f_norms = c(abs(f_gllvm1 - ref),
+  abs(f_gllvm2 - ref),
+  abs(f_glm1 - ref),
+  abs(f_glm2 - ref),
+  abs(f_jmle1 - ref),
+  abs(f_jmle2 - ref),
+  abs(f_glmnet1 - ref),
+  abs(f_glmnet2 - ref))
+
+which.min(f_norms)
+```
+
+
+```{r RMSE}
+Y_matrix = as.matrix(microbial[, 1:200])
+
+#GLLVM 1 l.v.
+rmse_gllvm1 = sqrt(mean((Y_matrix - pred_mu_gllvm1)^2))
+
+#GLLVM 2 l.v.
+rmse_gllvm2 = sqrt(mean((Y_matrix - pred_mu_gllvm2)^2))
+
+#GLM 1 l.v.
+rmse_glm1 = sqrt(mean((Y_matrix - pred_mu_glm1)^2))
+
+#GLM 2 l.v.
+rmse_glm2 = sqrt(mean((Y_matrix - pred_mu_glm2)^2))
+
+#JMLE 1 l.v.
+rmse_jmle1 = sqrt(mean((Y_matrix - pred_mu_jmle1)^2))
+
+#JMLE 2 l.v.
+rmse_jmle2 = sqrt(mean((Y_matrix - pred_mu_jmle2)^2))
+
+#GLMNET 1 l.v.
+rmse_glmnet1 = sqrt(mean((Y_matrix - pred_mu_glmnet1)^2))
+
+#GLMNET 2 l.v.
+rmse_glmnet2 = sqrt(mean((Y_matrix - pred_mu_glmnet2)^2))
+
+
+rmses = c(rmse_gllvm1,
+  rmse_gllvm2,
+  rmse_glm1,
+  rmse_glm2,
+  rmse_jmle1,
+  rmse_jmle2,
+  rmse_glmnet1,
+  rmse_glmnet2)
+
+which.min(rmses)
+```
+
+
+```{r Rotating, scaling u, lambda}
+identify_ulambda <- function(u, lambda) {
+  
+  # dimensions
+  D <- ncol(u)
+  
+  u_c <- scale(u, center = TRUE, scale = FALSE)
+
+  # 2. PCA rotation
+  pca <- prcomp(u_c, center = FALSE, scale. = FALSE)
+  
+  if (any(pca$sdev < sqrt(.Machine$double.eps))) {
+    stop("u contains a latent dimension with approximately zero variance.")
+  }
+  
+  # 3. PCA whitening: Cov(UTheta) = I
+  Theta <- pca$rotation %*% 
+    diag(1 / pca$sdev, nrow = D)
+  
+  UTheta <- u_c %*% Theta
+  
+  # Transform Lambda to preserve u_c lambda^T
+  Lambda0 <- lambda %*% solve(t(Theta))
+  
+  # 4. QR identification of Lambda0^T
+  qr_L <- qr(t(Lambda0))
+  Q <- qr.Q(qr_L)
+  R <- qr.R(qr_L)
+  
+  # 5. Force diagonal of R to be positive
+  sgn <- sign(diag(R))
+  sgn[sgn == 0] <- 1
+  S <- diag(sgn, nrow = D)
+  
+  #Flips signs in Q and R together, two sign changes cancel after when computing QR
+  Q <- Q %*% S 
+  R <- S %*% R 
+  
+  # 6. Final identified U and Lambda
+  U <- UTheta %*% Q
+  Lambda <- t(R)
+  
+  return(list(
+    U = U,
+    Lambda = Lambda
+  ))
+}
+
+load("gllvm_models/fitting/gllvm_2.RDATA")
+load("glm_models/fitting/glm_2.RDATA")
+load("jmle_models/fitting/jmle_2.RDATA")
+load("glmnet_models/fitting/glmnet_2.RDATA")
+
+ULambda_gllvm = identify_ulambda(gllvm_2$lvs, gllvm_2$params$theta)
+U_gllvm = ULambda_gllvm$U
+#colMeans(U_gllvm)
+#cov(U_gllvm)
+Lambda_gllvm = ULambda_gllvm$Lambda
+var_ulambda_gllvm = Lambda_gllvm%*%var(U_gllvm)%*%t(Lambda_gllvm)
+
+ULambda_glm = identify_ulambda(glm_2$u, glm_2$lambda)
+U_glm = ULambda_glm$U
+Lambda_glm = ULambda_glm$Lambda
+var_ulambda_glm = Lambda_glm%*%var(U_glm)%*%t(Lambda_glm)
+
+ULambda_jmle = identify_ulambda(jmle_2$u, jmle_2$lambda)
+U_jmle = ULambda_jmle$U
+Lambda_jmle = ULambda_jmle$Lambda
+var_ulambda_jmle = Lambda_jmle%*%var(U_jmle)%*%t(Lambda_jmle)
+
+ULambda_glmnet = identify_ulambda(glmnet_2$u, glmnet_2$lambda)
+U_glmnet = ULambda_glmnet$U
+Lambda_glmnet = ULambda_glmnet$Lambda
+var_ulambda_glmnet = Lambda_glmnet%*%var(U_glmnet)%*%t(Lambda_glmnet)
+
+var_ulambda_gllvm
+var_ulambda_glm
+var_ulambda_jmle
+var_ulambda_glmnet
+```
+
+
+```{r Biplot}
+manual_biplot <- function(u, lambda, y, n_species = 10,
+                          main = "") {
+  
+  # select species with largest loading magnitude
+  load_strength <- sqrt(rowSums(lambda^2))
+  selected_sp <- order(load_strength, decreasing = TRUE)[1:n_species]
+  
+  # scale arrows to latent scores
+  lambda_sel = lambda[selected_sp, , drop = FALSE]
+  
+  #make longest arrow 1.2 units long through taking max length of an arrow
+  arrow_length = sqrt(rowSums(lambda_sel^2))
+  arrow_scale = 2/max(arrow_length)
+  
+  par(pty = "s")
+  plot(
+    u[, 1], u[, 2],
+    xlab = "LV1",
+    ylab = "LV2",
+    pch = 16,
+    asp = 1,
+    xlim = c(-3, 3),
+    ylim = c(-4, 2),
+    main = main
+  )
+  
+  arrows(
+    x0 = 0, y0 = 0,
+    arrow_scale * lambda_sel[, 1],
+    arrow_scale * lambda_sel[, 2],
+    length = 0.08
+  )
+  
+  text(
+    arrow_scale * lambda[selected_sp, 1],
+    arrow_scale * lambda[selected_sp, 2],
+    labels = colnames(y)[selected_sp],
+    pos = 4,
+    cex = 0.7
+  )
+}
+
+png(
+  filename = file.path("figures", "gllvm_biplot.png"),
+  width = 1800,
+  height = 1800,
+  res = 300
+)
+
+manual_biplot(U_gllvm, Lambda_gllvm, Y, main = "Biplot for GLLVM fit")
+
+png(
+  filename = file.path("figures", "glm_biplot.png"),
+  width = 1800,
+  height = 1800,
+  res = 300
+)
+manual_biplot(U_glm, Lambda_glm, Y, main = "Biplot for GLM fit")
+
+png(
+  filename = file.path("figures", "jmle_biplot.png"),
+  width = 1800,
+  height = 1800,
+  res = 300
+)
+manual_biplot(U_jmle, Lambda_jmle, Y, main = "Biplot for JMLE fit")
+
+png(
+  filename = file.path("figures", "glmnet_biplot.png"),
+  width = 1800,
+  height = 1800,
+  res = 300
+)
+manual_biplot(U_glmnet, Lambda_glmnet, Y, main = "Biplot for GLMNET fit")
+```
