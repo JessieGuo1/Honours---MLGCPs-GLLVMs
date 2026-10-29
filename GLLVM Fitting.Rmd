@@ -287,48 +287,6 @@ loglik_new_glmnet_maxit2
 ```
 
 
-```{r Comparison between true and predicted counts}
-Y = microbial[, 1:200]
-ref = norm(as.matrix(Y), type = "F")
-
-#GLLVM 1 l.v.
-f_gllvm1 = norm(pred_mu_gllvm1, type = "F")
-
-#GLLVM 2 l.v.
-f_gllvm2 = norm(pred_mu_gllvm2, type = "F")
-
-#GLM 1 l.v.
-f_glm1 = norm(pred_mu_glm1, type = "F")
-
-#GLM 2 l.v.
-f_glm2 = norm(pred_mu_glm2, type = "F")
-
-#JMLE 1 l.v.
-f_jmle1 = norm(pred_mu_jmle1, type = "F")
-
-#JMLE 2 l.v.
-f_jmle2 = norm(pred_mu_jmle2, type = "F")
-
-#GLMNET 1 l.v.
-f_glmnet1 = norm(pred_mu_glmnet1, type = "F")
-
-#GLMNET 2 l.v.
-f_glmnet2 = norm(pred_mu_glmnet2, type = "F")
-
-
-f_norms = c(abs(f_gllvm1 - ref),
-  abs(f_gllvm2 - ref),
-  abs(f_glm1 - ref),
-  abs(f_glm2 - ref),
-  abs(f_jmle1 - ref),
-  abs(f_jmle2 - ref),
-  abs(f_glmnet1 - ref),
-  abs(f_glmnet2 - ref))
-
-which.min(f_norms)
-```
-
-
 ```{r RMSE}
 Y_matrix = as.matrix(microbial[, 1:200])
 
@@ -453,7 +411,7 @@ var_ulambda_glmnet
 
 
 ```{r Biplot}
-manual_biplot <- function(u, lambda, y, n_species = 10,
+manual_biplot <- function(u, lambda, y, n_species = 10, site = Xenv$Xenv.Site,
                           main = "") {
   
   # select species with largest loading magnitude
@@ -467,12 +425,18 @@ manual_biplot <- function(u, lambda, y, n_species = 10,
   arrow_length = sqrt(rowSums(lambda_sel^2))
   arrow_scale = 2/max(arrow_length)
   
+  #colour-code sites
+  site = factor(site)
+  site_cols = hcl.colors(nlevels(site), "Dynamic")
+  point_cols = site_cols[as.numeric(site)]
+  
   par(pty = "s")
   plot(
     u[, 1], u[, 2],
     xlab = "LV1",
     ylab = "LV2",
     pch = 16,
+    col = point_cols,
     asp = 1,
     xlim = c(-3, 3),
     ylim = c(-4, 2),
@@ -493,6 +457,12 @@ manual_biplot <- function(u, lambda, y, n_species = 10,
     pos = 4,
     cex = 0.7
   )
+  
+  legend("bottomright",
+         legend = levels(site),
+         col = site_cols,
+         pch = 16,
+         cex = 0.6)
 }
 
 png(
@@ -502,7 +472,7 @@ png(
   res = 300
 )
 
-manual_biplot(U_gllvm, Lambda_gllvm, Y, main = "Biplot for GLLVM fit")
+manual_biplot(U_gllvm, Lambda_gllvm, Y, main = "Biplot for gllvm fit")
 
 png(
   filename = file.path("figures", "glm_biplot.png"),
@@ -510,7 +480,7 @@ png(
   height = 1800,
   res = 300
 )
-manual_biplot(U_glm, Lambda_glm, Y, main = "Biplot for GLM fit")
+manual_biplot(U_glm, Lambda_glm, Y, main = "Biplot for alt_glm fit")
 
 png(
   filename = file.path("figures", "jmle_biplot.png"),
@@ -518,7 +488,7 @@ png(
   height = 1800,
   res = 300
 )
-manual_biplot(U_jmle, Lambda_jmle, Y, main = "Biplot for JMLE fit")
+manual_biplot(U_jmle, Lambda_jmle, Y, main = "Biplot for jmle fit")
 
 png(
   filename = file.path("figures", "glmnet_biplot.png"),
@@ -526,5 +496,5 @@ png(
   height = 1800,
   res = 300
 )
-manual_biplot(U_glmnet, Lambda_glmnet, Y, main = "Biplot for GLMNET fit")
+manual_biplot(U_glmnet, Lambda_glmnet, Y, main = "Biplot for alt_glmnet fit")
 ```

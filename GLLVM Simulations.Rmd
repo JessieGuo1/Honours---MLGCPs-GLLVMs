@@ -629,6 +629,11 @@ KL_int_glmnet_maxit2
 ```{r Plotting}
 library(ggplot2)
 B = 100
+Y = microbial[, 1:200]
+
+load("sim_counts_all.RDATA")
+load("sim_counts_all_2.RDATA")
+
 load(file.path("gllvm_models", "gllvm1_summary.RDATA"))
 load(file.path("gllvm_models", "gllvm2_summary.RDATA"))
 load(file.path("glm_models", "glm1_summary.RDATA"))
@@ -644,6 +649,55 @@ df = data.frame(method = factor(rep(c("gllvm","glm","jmle", "glmnet"), each = B)
                          KL2 = c(KL_all_gllvm2, KL_all_glm2, KL_all_jmle2, KL_all_glmnet2),
                          time2 = c(time_all_gllvm2, time_all_glm2, time_all_jmle2, time_all_glmnet2))
 
+#Comparison between true and predicted counts
+f_diff_gllvm1_all = rep(NA, B)
+f_diff_gllvm2_all = rep(NA, B)
+f_diff_glm1_all = rep(NA, B)
+f_diff_glm2_all = rep(NA, B)
+f_diff_jmle1_all = rep(NA, B)
+f_diff_jmle2_all = rep(NA, B)
+f_diff_glmnet1_all = rep(NA, B)
+f_diff_glmnet2_all = rep(NA, B)
+
+for (i in 1:B){
+  ref_1 = norm(as.matrix(sim_counts_all[ , i, ]), type = "F")
+  ref_2 = norm(as.matrix(sim_counts_all_2[ , i, ]), type = "F")
+  load(file.path("gllvm_models", paste0("gllvm_sim_1_", i, ".RDATA")))
+  f_gllvm1 = norm(pred_mu_gllvm1, type = "F")
+  f_diff_gllvm1_all[i] = abs(f_gllvm1 - ref_1)
+    
+  load(file.path("gllvm_models", paste0("gllvm_sim_2_", i, ".RDATA")))
+  f_gllvm2 = norm(pred_mu_gllvm2, type = "F")
+  f_diff_gllvm2_all[i] = abs(f_gllvm2 - ref_2)
+
+  load(file.path("glm_models", paste0("glm_sim_1_", i, ".RDATA")))
+  f_glm1 = norm(pred_mu_glm1, type = "F")
+  f_diff_glm1_all[i] = abs(f_glm1 - ref_1)
+
+  load(file.path("glm_models", paste0("glm_sim_2_", i, ".RDATA")))
+  f_glm2 = norm(pred_mu_glm2, type = "F")
+  f_diff_glm2_all[i] = abs(f_glm2 - ref_2)
+
+  load(file.path("jmle_models", paste0("jmle_sim_1_", i, ".RDATA")))
+  f_jmle1 = norm(pred_mu_jmle1, type = "F")
+  f_diff_jmle1_all[i] = abs(f_jmle1 - ref_1)
+  
+  load(file.path("jmle_models", paste0("jmle_sim_2_", i, ".RDATA")))
+  f_jmle2 = norm(pred_mu_jmle2, type = "F")
+  f_diff_jmle2_all[i] = abs(f_jmle2 - ref_2)
+
+  load(file.path("glmnet_models", paste0("glmnet_sim_1_", i, ".RDATA")))
+  f_glmnet1 = norm(pred_mu_glmnet1, type = "F")
+  f_diff_glmnet1_all[i] = abs(f_glmnet1 - ref_1)
+
+  load(file.path("glmnet_models", paste0("glmnet_sim_2_", i, ".RDATA")))
+  f_glmnet2 = norm(pred_mu_glmnet2, type = "F")
+  f_diff_glmnet2_all[i] = abs(f_glmnet2 - ref_2)
+}
+
+df = df %>% mutate(f_diff1 = c(f_diff_gllvm1_all, f_diff_glm1_all, f_diff_jmle1_all, f_diff_glmnet1_all),
+              f_diff2 = c(f_diff_gllvm2_all, f_diff_glm2_all, f_diff_jmle2_all, f_diff_glmnet2_all))
+  
 sim_plot = function(y, ylab, title, ylim = NULL){
   g = ggplot(data = df, aes(x = method, y = {{y}}, color = method)) + 
   ylab(ylab) + xlab("") +
@@ -681,6 +735,15 @@ ggsave("figures/sim-KLD2.png", width = 4, height = 6)
 g = sim_log_plot(y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
 g
 ggsave("figures/sim-time2.png", width = 4, height = 6)
+
+g = sim_plot(y = f_diff1, ylab = "Absolute Differences in Frobenius Norm", title = "|Frobenius Difference| for 1 latent variable")
+g
+ggsave("figures/sim-f_diff1.png", width = 4, height = 6)
+
+g = sim_plot(y = f_diff2, ylab = "Absolute Differences in Frobenius Norm", title = "|Frobenius Difference| for 2 latent variables")
+g
+ggsave("figures/sim-f_diff2.png", width = 4, height = 6)
+
 
 ```
 
@@ -744,11 +807,36 @@ stats[c(1, 5)]
 
 KL_all_gllvm1_trim = KL_all_gllvm1[KL_all_gllvm1 >= stats[1] & KL_all_gllvm1 <= stats[5]]
 
-# Mean, standard deviation of KL divergence
+x_time = df$time1[df$method == "gllvm"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_gllvm1_trim = time_all_gllvm1[
+  time_all_gllvm1 >= stats_time[1] & time_all_gllvm1 <= stats_time[5]
+]
+
+x_f = df$f_diff1[df$method == "gllvm"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_gllvm1_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
+# Mean, standard deviation of time, KL divergence, frobenius norm
 KL_int_gllvm1 = c(mean(KL_all_gllvm1_trim, na.rm = TRUE), sqrt(var(KL_all_gllvm1_trim, na.rm = TRUE)))
+
+time_int_gllvm1 = c(
+  mean(time_all_gllvm1_trim, na.rm = TRUE),
+  sd(time_all_gllvm1_trim, na.rm = TRUE)
+)
+
+f_int_gllvm1 = c(
+  mean(f_diff_gllvm1_trim, na.rm = TRUE),
+  sd(f_diff_gllvm1_trim, na.rm = TRUE)
+)
 
 time_int_gllvm1
 KL_int_gllvm1
+f_int_gllvm1
 ```
 
 ```{r }
@@ -759,12 +847,38 @@ stats[c(1, 5)]
 
 KL_all_gllvm2_trim = KL_all_gllvm2[KL_all_gllvm2 >= stats[1] & KL_all_gllvm2 <= stats[5]]
 
-# Mean, standard deviation of KL divergence
+x_time = df$time2[df$method == "gllvm"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_gllvm2_trim = time_all_gllvm2[
+  time_all_gllvm2 >= stats_time[1] & time_all_gllvm2 <= stats_time[5]
+]
+
+x_f = df$f_diff2[df$method == "gllvm"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_gllvm2_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
+# Mean, standard deviation of time, KL divergence
 KL_int_gllvm2 = c(mean(KL_all_gllvm2_trim, na.rm = TRUE), sqrt(var(KL_all_gllvm2_trim, na.rm = TRUE)))
+
+time_int_gllvm2 = c(
+  mean(time_all_gllvm2_trim, na.rm = TRUE),
+  sd(time_all_gllvm2_trim, na.rm = TRUE)
+)
+
+f_int_gllvm2 = c(
+  mean(f_diff_gllvm2_trim, na.rm = TRUE),
+  sd(f_diff_gllvm2_trim, na.rm = TRUE)
+)
 
 time_int_gllvm2
 KL_int_gllvm2
+f_int_gllvm2
 ```
+
 
 ```{r GLM KL trimmed outliers for mean, sd}
 x = df$KL1[df$method == "glm"]
@@ -774,12 +888,38 @@ stats[c(1, 5)]
 
 KL_all_glm1_trim = KL_all_glm1[KL_all_glm1 >= stats[1] & KL_all_glm1 <= stats[5]]
 
+x_time = df$time1[df$method == "glm"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_glm1_trim = time_all_glm1[
+  time_all_glm1 >= stats_time[1] & time_all_glm1 <= stats_time[5]
+]
+
+x_f = df$f_diff1[df$method == "glm"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_glm1_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
 # Mean, standard deviation of KL divergence
 KL_int_glm1 = c(mean(KL_all_glm1_trim, na.rm = TRUE), sqrt(var(KL_all_glm1_trim, na.rm = TRUE)))
 
+time_int_glm1 = c(
+  mean(time_all_glm1_trim, na.rm = TRUE),
+  sd(time_all_glm1_trim, na.rm = TRUE)
+)
+
+f_int_glm1 = c(
+  mean(f_diff_glm1_trim, na.rm = TRUE),
+  sd(f_diff_glm1_trim, na.rm = TRUE)
+)
+
 time_int_glm1
 KL_int_glm1
+f_int_glm1
 ```
+
 
 ```{r}
 x = df$KL2[df$method == "glm"]
@@ -789,12 +929,38 @@ stats[c(1, 5)]
 
 KL_all_glm2_trim = KL_all_glm2[KL_all_glm1 >= stats[1] & KL_all_glm2 <= stats[5]]
 
-# Mean, standard deviation of KL divergence
+x_time = df$time2[df$method == "glm"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_glm2_trim = time_all_glm2[
+  time_all_glm2 >= stats_time[1] & time_all_glm2 <= stats_time[5]
+]
+
+x_f = df$f_diff2[df$method == "glm"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_glm2_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
+# Mean, standard deviation of time, KL divergence
 KL_int_glm2 = c(mean(KL_all_glm2_trim, na.rm = TRUE), sqrt(var(KL_all_glm2_trim, na.rm = TRUE)))
+
+time_int_glm2 = c(
+  mean(time_all_glm2_trim, na.rm = TRUE),
+  sd(time_all_glm2_trim, na.rm = TRUE)
+)
+
+f_int_glm2 = c(
+  mean(f_diff_glm2_trim, na.rm = TRUE),
+  sd(f_diff_glm2_trim, na.rm = TRUE)
+)
 
 time_int_glm2
 KL_int_glm2
+f_int_glm2
 ```
+
 
 ```{r JMLE KL trimmed outliers for mean, sd}
 x = df$KL1[df$method == "jmle"]
@@ -804,12 +970,38 @@ stats[c(1, 5)]
 
 KL_all_jmle1_trim = KL_all_jmle1[KL_all_jmle1 >= stats[1] & KL_all_jmle1 <= stats[5]]
 
-# Mean, standard deviation of KL divergence
+x_time = df$time1[df$method == "jmle"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_jmle1_trim = time_all_jmle1[
+  time_all_jmle1 >= stats_time[1] & time_all_jmle1 <= stats_time[5]
+]
+
+x_f = df$f_diff1[df$method == "jmle"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_jmle1_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
+# Mean, standard deviation of time, KL divergence
 KL_int_jmle1 = c(mean(KL_all_jmle1_trim, na.rm = TRUE), sqrt(var(KL_all_jmle1_trim, na.rm = TRUE)))
+
+time_int_jmle1 = c(
+  mean(time_all_jmle1_trim, na.rm = TRUE),
+  sd(time_all_jmle1_trim, na.rm = TRUE)
+)
+
+f_int_jmle1 = c(
+  mean(f_diff_jmle1_trim, na.rm = TRUE),
+  sd(f_diff_jmle1_trim, na.rm = TRUE)
+)
 
 time_int_jmle1
 KL_int_jmle1
+f_int_jmle1
 ```
+
 
 ```{r}
 x = df$KL2[df$method == "jmle"]
@@ -819,12 +1011,38 @@ stats[c(1, 5)]
 
 KL_all_jmle2_trim = KL_all_jmle2[KL_all_jmle2 >= stats[1] & KL_all_jmle2 <= stats[5]]
 
-# Mean, standard deviation of KL divergence
+x_time = df$time2[df$method == "jmle"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_jmle2_trim = time_all_jmle2[
+  time_all_jmle2 >= stats_time[1] & time_all_jmle2 <= stats_time[5]
+]
+
+x_f = df$f_diff2[df$method == "jmle"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_jmle2_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
+# Mean, standard deviation of time, KL divergence
 KL_int_jmle2 = c(mean(KL_all_jmle2_trim, na.rm = TRUE), sqrt(var(KL_all_jmle2_trim, na.rm = TRUE)))
+
+time_int_jmle2 = c(
+  mean(time_all_jmle2_trim, na.rm = TRUE),
+  sd(time_all_jmle2_trim, na.rm = TRUE)
+)
+
+f_int_jmle2 = c(
+  mean(f_diff_jmle2_trim, na.rm = TRUE),
+  sd(f_diff_jmle2_trim, na.rm = TRUE)
+)
 
 time_int_jmle2
 KL_int_jmle2
+f_int_jmle2
 ```
+
 
 ```{r GLMNET KL trimmed outliers for mean, sd}
 x = df$KL1[df$method == "glmnet"]
@@ -834,12 +1052,38 @@ stats[c(1, 5)]
 
 KL_all_glmnet1_trim = KL_all_glmnet1[KL_all_glmnet1 >= stats[1] & KL_all_glmnet1 <= stats[5]]
 
+x_time = df$time1[df$method == "glmnet"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_glmnet1_trim = time_all_glmnet1[
+  time_all_glmnet1 >= stats_time[1] & time_all_glmnet1 <= stats_time[5]
+]
+
+x_f = df$f_diff1[df$method == "glmnet"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_glmnet1_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
 # Mean, standard deviation across simulations
 KL_int_glmnet1 = c(mean(KL_all_glmnet1_trim, na.rm = TRUE), sqrt(var(KL_all_glmnet1_trim, na.rm = TRUE)))
 
+time_int_glmnet1 = c(
+  mean(time_all_glmnet1_trim, na.rm = TRUE),
+  sd(time_all_glmnet1_trim, na.rm = TRUE)
+)
+
+f_int_glmnet1 = c(
+  mean(f_diff_glmnet1_trim, na.rm = TRUE),
+  sd(f_diff_glmnet1_trim, na.rm = TRUE)
+)
+
 time_int_glmnet1
 KL_int_glmnet1
+f_int_glmnet1
 ```
+
 
 ```{r}
 x = df$KL2[df$method == "glmnet"]
@@ -849,11 +1093,36 @@ stats[c(1, 5)]
 
 KL_all_glmnet2_trim = KL_all_glmnet2[KL_all_glmnet2 >= stats[1] & KL_all_glmnet2 <= stats[5]]
 
+x_time = df$time2[df$method == "glmnet"]
+stats_time = boxplot.stats(x_time)$stats
+
+time_all_glmnet2_trim = time_all_glmnet2[
+  time_all_glmnet2 >= stats_time[1] & time_all_glmnet2 <= stats_time[5]
+]
+
+x_f = df$f_diff2[df$method == "glmnet"]
+stats_f = boxplot.stats(x_f)$stats
+
+f_diff_glmnet2_trim = x_f[
+  x_f >= stats_f[1] & x_f <= stats_f[5]
+]
+
 # Mean, standard deviation across simulations
 KL_int_glmnet2 = c(mean(KL_all_glmnet2, na.rm = TRUE), sqrt(var(KL_all_glmnet2, na.rm = TRUE)))
 
+time_int_glmnet2 = c(
+  mean(time_all_glmnet2_trim, na.rm = TRUE),
+  sd(time_all_glmnet2_trim, na.rm = TRUE)
+)
+
+f_int_glmnet2 = c(
+  mean(f_diff_glmnet2_trim, na.rm = TRUE),
+  sd(f_diff_glmnet2_trim, na.rm = TRUE)
+)
+
 time_int_glmnet2
 KL_int_glmnet2
+f_int_glmnet2
 ```
 
 
