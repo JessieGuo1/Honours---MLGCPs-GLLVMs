@@ -166,14 +166,14 @@ time_i = system.time({for (iter in 1:N){
 
   offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
 
-  X_joint = Z_star * lambda_rep 
+  Zl_joint = Z_star * lambda_rep 
 
   start_iter_u = if (all(is.finite(u))) {
     u} else {
       NULL
       }
 
-  glm1 = glm.fit(x = X_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), start = start_iter_u, control = glm.control(maxit = max_it))
+  glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), start = start_iter_u, control = glm.control(maxit = max_it))
   
   new_u = as.numeric(glm1$coefficients)
 

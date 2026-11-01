@@ -211,12 +211,12 @@ time_i = system.time({for (iter in 1:N){
   offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
 
   # Shared-field design matrix
-  X_joint = Z_row * lambda_rep
-  attr(X_joint, "xm") = rep(0, ncol(X_joint))
-  attr(X_joint, "xs") = rep(1, ncol(X_joint))
+  Zl_joint = Z_row * lambda_rep
+  attr(Zl_joint, "xm") = rep(0, ncol(Zl_joint))
+  attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
  
   # Joint ridge update for u
-  glmnet1 = glmnet:::glmnet.fit(x = X_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)))#, maxit = nGlmnetIter) 
+  glmnet1 = glmnet:::glmnet.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)))#, maxit = nGlmnetIter) 
   
   # Update shared-field coefficients
   new_u = as.numeric(glmnet1$beta)

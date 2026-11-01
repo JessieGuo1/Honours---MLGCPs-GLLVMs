@@ -175,10 +175,10 @@ time_i = system.time({for (iter in 1:N){
 
   offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
 
-  X_joint = Z_star * lambda_rep
+  Zl_joint = Z_star * lambda_rep
   
   for (i in 1:nrow(new_u)){
-    other_spatial = X_joint %*% u - X_joint[, i, drop = FALSE] %*% u[i, , drop = FALSE]
+    other_spatial = Zl_joint %*% u - Zl_joint[, i, drop = FALSE] %*% u[i, , drop = FALSE]
     
     start_iter_u = if (all(is.finite(u[i, ]))) {
     u[i, ]} else {
@@ -186,7 +186,7 @@ time_i = system.time({for (iter in 1:N){
     }
     
     offset_i = offset + other_spatial
-    glm1 = glm.fit(x = X_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.matrix(offset_i), start = start_iter_u, control = glm.control(maxit = max_it))
+    glm1 = glm.fit(x = Zl_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.matrix(offset_i), start = start_iter_u, control = glm.control(maxit = max_it))
   new_u[i, ] = t(as.numeric(glm1$coefficients))
   u[i, ] = new_u[i, ]
   }
