@@ -1,5 +1,5 @@
 ---
-title: "mvlgcp glm one quad"
+title: "mlgcp glm one quad"
 output: html_document
 date: "2026-10-07"
 editor_options: 
@@ -76,28 +76,13 @@ gc()
 ```
 
 
-```{r}
-# need a function to strip environments from the model objects so they can be saved without being massive
-rm.env <- function(m) {
-  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-  m
-}
-```
-
-
 ```{r Build spatial basis functions}
 bfs <- make_basis(k = 50, domain, from.package = "scampr")
 
 # need to prune in the case of scampr bfs
 if (is(bfs, "scampr.bf")) {
   tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")])) # via the data?
-  tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
+#  tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
   bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
   bfs <- bfs[bf.check != 0, ]
   rm(tmp, bf.check)
@@ -148,7 +133,7 @@ rows_by_species = split(seq_len(nrow(pres)), pres_spid)
 species_idx_pres = match(pres_spid, chosen_spid)
 species_idx_row = match(spid, chosen_spid)
 
-N = 100
+N = 1000
 loglik = -Inf
 max_it = 3
 
@@ -196,16 +181,16 @@ time_i = system.time({for (iter in 1:N){
 
   glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), start = start_iter_u, control = glm.control(maxit = max_it))
   
-  new_u = as.numeric(glm1$coefficients)
-
-  u = new_u
+  u = as.numeric(glm1$coefficients)
   print(u)
   
   # Rebuild Zu with updated u, for next iteration's column update
   Z_pres_u = Z_pres %*% u 
   Z_quad_u = Z_quad %*% u
 
-  eta = offset + (Z_row * lambda_rep) %*% u
+#  eta = offset + (Z_row * lambda_rep) %*% u
+  Zu = Z_row %*% u
+  eta = offset + rowSums(Zu * lambda_rep)
   mu = exp(eta)
   pred_mglm_oneq = mu
   

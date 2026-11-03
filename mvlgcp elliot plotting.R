@@ -1,20 +1,5 @@
-# Get the job array
-load("job_array.RDATA")
-
-# determine job number from pbs script
-job = 1
-
-## MODEL SETTINGS ##############################################################
-
-# set the number of latent factor we want to use
-d = 1
 # set approximate number of basis function nodes to use
 basis.dim = 50
-# get the predictor set to be modelled
-# pred_set <- as.character(tab$p[tab$job == job])
-# get the basis function type to be used
-# bf.type <- as.character(tab$bf.type[tab$job == job])
-################################################################################
 
 library(glmmTMB)
 
@@ -99,7 +84,7 @@ gc()
 
 # with correlated fields only ##################################################
 time_i = system.time({try(assign("mB1", mvlgcp(occ ~ 0 + spid + spid:mi + spid:tempann,
-                         data = dat, weights = wt, basis.functions = bfs, response.id = spid, n_factors = d,
+                         data = dat, weights = wt, basis.functions = bfs, response.id = spid, n_factors = 1,
                          control = glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)), mv.flds = "correlated")
 ))})
 
@@ -108,10 +93,13 @@ if (exists("mB1")) {
   print("mB1 converged without start parameters (attempt 1)")
 #  mB1 <- rm.env(mB1)
   mB1$start.pars <- "cold"
-  save(mB1, file = paste0(getwd(), "/models/mB1_", job, ".RDATA"))
+  save(mB1, file = paste0(getwd(), "/models/mB1_1.RDATA"))
 }
 
-pred_mlgcp = predict(mB1, type = "response", re.form = NA)
+load("models/mB1_1.RDATA")
+mB1
+
+pred_mlgcp = predict(mB1, type = "response", re.form = NULL)
 
 loglik_new_mlgcp = sum(dat$occ * log(pred_mlgcp) - dat$wt * pred_mlgcp)
 save(loglik_new_mlgcp, file = "loglik_new_mlgcp.RDATA")
@@ -126,13 +114,8 @@ target_species_id <- "nsw19"
 Lambda = get_loadings(mB1)
 species_idx = which(species == target_species_id)
 
-get_field_fixed = function(object, newdata,
-                           which.response = NULL,
-                           combine.response.fields = TRUE) {
-  
-  if (is.null(object$basis.functions)) {
-    stop("Supplied fitted model does not include basis functions")
-  }
+get_field_fixed = function(object, newdata, which.response = NULL, combine.response.fields = TRUE) {
+  if (is.null(object$basis.functions)) stop("Supplied fitted model does not include basis functions")
   
   if (missing(newdata)) {
     warning("'newdata' is not provided. Fitted values will be used...")
@@ -140,22 +123,15 @@ get_field_fixed = function(object, newdata,
   }
   
   if (ncol(newdata) > 2) {
-    if (!all(attr(object$basis.functions, "coord.names") %in%
-             colnames(newdata))) {
-      
+    if (!all(attr(object$basis.functions, "coord.names") %in% colnames(newdata))) {
       stop("'coord.names' associated with the fitted model's basis functions are not found within the newdata supplied")
-      
     } else {
-      
-      newdata =
-        newdata[, attr(object$basis.functions, "coord.names")]
+      newdata = newdata[, attr(object$basis.functions, "coord.names")]
     }
   }
   
   X = bf_matrix(object$basis.functions, newdata)
-  
   b = get_bfs_coeff(object)
-  
   fld = X %*% b
   
   if (object$n_responses == 1) {
@@ -165,76 +141,37 @@ get_field_fixed = function(object, newdata,
   }
   
   if (!is.null(which.response)) {
-    
     if (object$n_responses == 1) {
-      
       warning("'which.response' is not applicable to a univariate model... returning the single latent field")
       Lambda = NULL
-      
     } else if (object$n_responses < length(which.response)) {
-      
       stop("more fields requested through 'which.response' than responses in the fitted model. Please check and retry")
-      
     } else {
       
       if (object$mv.flds %in% c("correlated", "both")) {
-        
-        # FIXED: preserve matrix dimensions when d = 1
-        fld_cor =
-          fld[
-            ,
-            grepl("d", colnames(fld), fixed = TRUE),
-            drop = FALSE
-          ] %*%
-          t(
-            Lambda[
-              which.response,
-              ,
-              drop = FALSE
-            ]
-          )
-        
+        fld_cor = fld[, grepl("d", colnames(fld), fixed = TRUE), drop = FALSE] %*% t(Lambda[which.response, , drop = FALSE])
       } else {
-        
         fld_cor = NULL
-        
       }
       
-      if (!is.null(fld_cor)) {
-        colnames(fld_cor) = paste0("m", which.response)
-      }
+      if (!is.null(fld_cor)) colnames(fld_cor) = paste0("m", which.response)
       
       if (object$mv.flds %in% c("independent", "both")) {
-        
         if (length(which.response) > 1) {
           fld_ind = fld[, paste0("m", which.response), drop = FALSE]
         } else {
-          fld_ind = as.matrix(
-            fld[, paste0("m", which.response)]
-          )
+          fld_ind = as.matrix(fld[, paste0("m", which.response)])
         }
-        
       } else {
-        
         fld_ind = NULL
-        
       }
       
-      if (!is.null(fld_ind)) {
-        colnames(fld_ind) =
-          paste0("m", which.response, "_ind")
-      }
+      if (!is.null(fld_ind)) colnames(fld_ind) = paste0("m", which.response, "_ind")
       
-      if (combine.response.fields &&
-          !is.null(fld_cor) &&
-          !is.null(fld_ind)) {
-        
+      if (combine.response.fields && !is.null(fld_cor) && !is.null(fld_ind)) {
         fld = fld_cor + fld_ind
-        
       } else {
-        
         fld = cbind(fld_cor, fld_ind)
-        
       }
     }
   }
@@ -282,9 +219,18 @@ border_lonlat = disBorder("NSW")
 tmap_mode("plot")
 
 load("m_intensity_map.RDATA")
-glmnet_mlgcp_map = m_intensity_map(grid_pred_lonlat, species_label = 19)
-print(glmnet_mlgcp_map)
-save(glmnet_mlgcp_map, file = "glmnet_mlgcp_map.RDATA")
+mlgcp_map = m_intensity_map(grid_pred_lonlat, species_label = 19)
+print(mlgcp_map)
+save(mlgcp_map, file = "mlgcp_map.RDATA")
+load("mlgcp_map.RDATA")
+print(mlgcp_map)
+
+
+
+
+
+
+
 
 
 

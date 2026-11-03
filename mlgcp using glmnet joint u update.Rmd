@@ -75,20 +75,6 @@ domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y 
 gc()
 ```
 
-```{r}
-# Remove formula environments before saving
-rm.env <- function(m) {
-  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-  m
-}
-```
-
 
 ```{r Build spatial basis functions}
 #bfs <- make_basis(k = 50, domain, from.package = "scampr")
@@ -114,7 +100,7 @@ load("Z_star.RDATA")
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor}
 
-ridgePen=1 #penalty strength
+ridgePen=0.1 #penalty strength
 
 ### standardise X's up here to variance of one ###
 
@@ -146,8 +132,9 @@ rows_by_species = split(seq_len(nrow(dat_rename)), spid)
 species_idx_row = match(spid, chosen_spid)
 
 # Outer (column-update + row-update) iterations
-N = 100 
+N = 1000 
 loglik = -Inf
+max_it = 3
 
 # Species-specific warm starts
 warm_start = vector("list", n_species)
@@ -169,7 +156,7 @@ time_i = system.time({for (iter in 1:N){
     X_i = X_Zu[idx, ]
     
     # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
-    glmnet1 = glmnet:::glmnet.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor)#, maxit = nGlmnetIter)
+    glmnet1 = glmnet:::glmnet.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
     
     # Store this species' intercept + beta + lambda (1 loading)
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
@@ -195,11 +182,10 @@ time_i = system.time({for (iter in 1:N){
   attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
 
   # Joint ridge update for u
-  glmnet1 = glmnet:::glmnet.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u))) 
+  glmnet1 = glmnet:::glmnet.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)), control = glmnet.control(mxitnr = max_it)) 
   
   # Update shared-field coefficients
-  new_u = as.numeric(glmnet1$beta)
-  u = new_u
+  u = as.numeric(glmnet1$beta)
   print(u)
   
   # Recompute shared spatial field with updated u, for next iteration's column update

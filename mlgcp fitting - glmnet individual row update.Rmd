@@ -1,5 +1,5 @@
 ---
-title: "mlgcp fitting - glm individual site update"
+title: "mlgcp glmnet individual row update"
 output: html_document
 date: "2026-09-18"
 editor_options: 
@@ -22,67 +22,53 @@ library(scampr)
 library(glmmTMB)
 set.seed(0)
 
-# Get the data
+# get the data
 source("get_and_format_flora_data.R")
 rm(dat_pa)
 
-# Optional predictor subsets
+# get the relevant predictors according to pred_set (these are all basically derived from elevation, we are just looking at moisture and temp. covars and soil fertility score and disturbance index)
 # preds <- switch(pred_set,
 #                 A = "None",
 #                 B = c("mi", "tempann"),
 #                 C = c("mi", "tempann", "mi2", "tempann2"),
 # )
 
-# Get a vector of the factor terms
+# get a vector of the factor terms
 facts <- c("disturb", "soilfert", "vegsis")
 
-# Load the species information
+# load the species information
 load("flora_species.RDATA")
 
-# Retain selected flora groups
+# get the groups to which the flora species belongs to subset the data
 flora_groups <- unique(sp.info$group)
+
+# subset the presence-only data (in the case we are using restricted species)
 pres <- pres[pres$group %in% flora_groups, ]
 
-# Keep species with at least 10 presences
+# want to use species with at least 10 presences
 pres <- pres[pres$spid %in% names(table(pres$spid))[table(pres$spid) >= 10], ]
 
-# Retained species
+# get the species
 species <- unique(pres$spid)
 
-# Dimensions
+# assign some numbers
 m <- length(species) # responses
 q <- nrow(quad) # quadrature points
 
-# Replicate quadrature points for each species
+# add in the quadrature for each species (replicates of the supplied background points)
 tmp <- quad[rep(seq_len(q), m), ]
 tmp$spid <- rep(species, each = q) # assign the species id's
-
 dat <- rbind(pres, tmp)
 n <- nrow(dat)
 rm(tmp)
 
-# Preserve lon/lat and use model coordinates as x/y
+# set the coordinates to x and y so we can just use default labels
 dat$lon <- dat$x; dat$lat <- dat$y; dat$x <- dat$xm; dat$y <- dat$ym; dat$xm <- NULL; dat$ym <- NULL
 
 load("domain.RDATA")
 domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
 
 gc()
-```
-
-
-```{r}
-# Preserve lon/lat and use model coordinates as x/y
-rm.env <- function(m) {
-  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-  m
-}
 ```
 
 
@@ -109,7 +95,7 @@ load("Z_star.RDATA")
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor)}
 
-ridgePen=1 #penalty strength
+ridgePen=0.1 #penalty strength
 
 ### standardise X's up here to variance of one ###
 
@@ -124,7 +110,6 @@ attach(dat_rename)
 
 # Shared spatial field
 Zu = Z_star%*%u
-
 chosen_spid = unique(spid)
 n_species = length(chosen_spid)
 
@@ -134,7 +119,7 @@ X_full = cbind(1, mi, tempann)
 # Store species-specific intercepts, slopes and loadings
 beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Zu) + ncol(X_full)) 
 # Store factor
-new_u = matrix(NA, nrow = ncol(Z_star), ncol = 1) #k x 1
+new_u = matrix(NA, nrow = ncol(Z_star), ncol = ncol(u)) #k x 1
 
 # Row indices for each species
 rows_by_species = split(seq_len(nrow(dat_rename)), spid)
@@ -143,14 +128,12 @@ rows_by_species = split(seq_len(nrow(dat_rename)), spid)
 species_idx_row = match(spid, chosen_spid)
 
 # Outer (column-update + row-update) iterations
-N = 100
+N = 1000
 loglik = -Inf
+max_it = 3
 
 # Species-specific warm starts
 warm_start = vector("list", n_species)
-
-# Factor warm starts
-warm_start_u = vector("list", nrow(as.matrix(u))) #cases exist where algorithm diverges or takes too long
 
 # Penalise only the spatial loading
 penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) #cases exist where algorithm diverges
@@ -170,7 +153,7 @@ time_i = system.time({for (iter in 1:N){
     X_i = X_Zu[idx, ]
     
     # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
-    glmnet1 = glmnet:::glmnet.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, alpha = 0, lambda = ridgePen, warm = warm_start[[j]], penalty.factor = penalty_factor)#, maxit = nGlmnetIter)
+    glmnet1 = glmnet:::glmnet.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, alpha = 0, lambda = ridgePen, warm = warm_start[[j]], penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
     
     # Store this species' intercept + beta + lambda (1 loading)
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
@@ -197,25 +180,29 @@ time_i = system.time({for (iter in 1:N){
   attr(Zl_joint, "xm") = rep(0, ncol(Zl_joint))
   attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
   
+  offset_i = offset + Zl_joint %*% u
   # Ridge update for u
-  for (i in 1:nrow(new_u)){
-    glmnet1 = glmnet:::glmnet.fit(x = Zl_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = warm_start_u[[i]]) 
+  for (i in 1:nrow(u)){
+    offset_i = offset_i - Zl_joint[, i, drop = FALSE] %*% u[i, , drop = FALSE] #
+    
+    glmnet1 = glmnet:::glmnet.fit(x = Zl_joint[, i, drop = FALSE], y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset_i), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u[i, ])), control = glmnet.control(mxitnr = max_it)) #cases exist where algorithm diverges or takes too long 
     
     # Update shared-field coefficients
     new_u[i, ] = t(as.numeric(glmnet1$beta))
-    
-    # Update warm start
-    warm_start_u[[i]] = list(a0 = 0, beta = as.numeric(glmnet1$beta))
+    #u[i, ] = u[i, ] + new_u[i, ]
+    #offset_i = offset_i + Zl_joint[, i, drop = FALSE]%*% new_u[i, ]
+    u[i, ] = new_u[i, ]
+    offset_i = offset_i + Zl_joint[, i, drop = FALSE]%*% u[i, , drop = FALSE]    
    }
 
-  u = u + (new_u - u)*1/4
+#  u = u + (new_u - u)*1/4
   print(u)
   
   # Recompute shared spatial field with updated u, for next iteration's column update
   Zu = Z_star%*%u
   
   # Full linear predictor
-  eta = offset + (Z_star * lambda_rep) %*% u
+  eta = offset + rowSums(Zu * lambda_rep)
   mu = exp(eta)
   pred_mglmnet_individ_row = mu
 
@@ -275,7 +262,8 @@ m_intensity_map = function(grid_pred_lonlat, species_label = ""){
                   values = "turbo",
                   limits = c(-13, -4),
                   outliers.trunc = c(TRUE, TRUE)),
-                col.legend = tm_legend(title = "Log fitted intensity")) +
+                col.legend = tm_legend(title = "Log fitted intensity",
+                                       reverse = TRUE)) +
     tm_shape(species_points_lonlat) +
     tm_dots(size = 0.4, col = "black", shape = 4, col_alpha = 0.8) + #, fill.legend = tm_legend_hide()) + # add the points
     tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
@@ -577,7 +565,7 @@ load("Z_star.RDATA")
 
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor)}
-ridgePen=1 #penalty strength
+ridgePen=0.1 #penalty strength
 nGlmnetIter=40 #max iterations glmnet allowed
 
 ### standardise X's up here to variance of one ###

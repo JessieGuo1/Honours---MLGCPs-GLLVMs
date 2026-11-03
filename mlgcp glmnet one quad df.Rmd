@@ -1,5 +1,5 @@
 ---
-title: "mlgcp using glmnet, using one quad df"
+title: "mlgcp glmnet one quad df"
 output: html_document
 date: "2026-09-27"
 editor_options: 
@@ -77,21 +77,6 @@ gc()
 ```
 
 
-```{r}
-# Remove formula environments before saving
-rm.env <- function(m) {
-  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-  m
-}
-```
-
-
 ```{r Build spatial basis functions}
 bfs <- make_basis(k = 50, domain, from.package = "scampr")
 
@@ -124,7 +109,7 @@ Z_row = rbind(Z_pres, Z_quad_rep)
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor)}
 
-ridgePen=1 #penalty strength
+ridgePen=0.1 #penalty strength
 
 ### standardise X's up here to variance of one ###
 
@@ -162,14 +147,15 @@ species_idx_pres = match(pres_spid, chosen_spid)
 species_idx_row = match(spid, chosen_spid)
 
 # Outer (column-update + row-update) iterations
-N = 100
+N = 1000
 loglik = -Inf
+max_it = 3
 
 # Species-specific warm starts
 warm_start = vector("list", n_species)
 
 # Penalise only the spatial loading
-penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) #cases exist where algorithm diverges
+penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Z_pres_u))) #cases exist where algorithm diverges
 
 time_i = system.time({for (iter in 1:N){
 # Covariates and current spatial field
@@ -190,7 +176,7 @@ time_i = system.time({for (iter in 1:N){
     w_i = c(dat$wt[idx], quad$wt)
     
     # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
-    glmnet1 = glmnet:::glmnet.fit(y = y_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor)#, maxit = nGlmnetIter)
+    glmnet1 = glmnet:::glmnet.fit(y = y_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
     
     # Store this species' intercept + beta + lambda (1 loading)
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
@@ -216,11 +202,10 @@ time_i = system.time({for (iter in 1:N){
   attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
  
   # Joint ridge update for u
-  glmnet1 = glmnet:::glmnet.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)))#, maxit = nGlmnetIter) 
+  glmnet1 = glmnet:::glmnet.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)), control = glmnet.control(mxitnr = max_it)) 
   
   # Update shared-field coefficients
-  new_u = as.numeric(glmnet1$beta)
-  u = new_u
+  u = as.numeric(glmnet1$beta)
   print(u)
   
   # Recompute shared spatial field with updated u, for next iteration's column update
@@ -228,7 +213,10 @@ time_i = system.time({for (iter in 1:N){
   Z_quad_u = Z_quad %*% u
   
   # Full linear predictor
-  eta = offset + (Z_row * lambda_rep) %*% u
+  #eta = offset + (Z_row * lambda_rep) %*% u
+  Zu = Z_row%*%u
+  eta = offset + rowSums(Zu * lambda_rep)
+
   mu = exp(eta)
   pred_mglmnet_oneq = mu
   
@@ -262,7 +250,7 @@ target_species_id <- 19
 j = match(target_species_id, chosen_spid)
 
 # Fitted log intensity
-sp_fld_glmnet = X_domain %*% beta[j, ] + Zu_domain %*% lambda[j, ]
+sp_fld_glmnet = X_domain %*% beta[j, ] + Zu_domain%*%lambda[j, ]
 domain$log_intensity = as.numeric(sp_fld_glmnet[, 1])
 
 # Convert prediction grid to stars object

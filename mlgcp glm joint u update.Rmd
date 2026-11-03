@@ -73,20 +73,6 @@ gc()
 ```
 
 
-```{r}
-# need a function to strip environments from the model objects so they can be saved without being massive
-rm.env <- function(m) {
-  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-  m
-}
-```
-
 
 ```{r Build spatial basis functions}
 bfs <- make_basis(k = 50, domain, from.package = "scampr")
@@ -132,7 +118,7 @@ beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Zu) + ncol(X_full))
 rows_by_species = split(seq_len(nrow(dat_rename)), spid)
 species_idx_row = match(spid, chosen_spid) #543323 x 1
 
-N = 100 
+N = 1000 
 loglik = -Inf
 max_it = 3
 
@@ -175,15 +161,13 @@ time_i = system.time({for (iter in 1:N){
 
   glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), start = start_iter_u, control = glm.control(maxit = max_it))
   
-  new_u = as.numeric(glm1$coefficients)
-
-  u = new_u
+  u = as.numeric(glm1$coefficients)
   print(u)
   
   #rebuild Zu with updated u, for next iteration's column update
   Zu = Z_star%*%u
-
-  eta = offset + (Z_star * lambda_rep) %*% u
+  eta = offset + rowSums(Zu * lambda_rep)
+  #eta = offset + (Z_star * lambda_rep) %*% u
   mu = exp(eta)
   pred_mglm = mu
   
