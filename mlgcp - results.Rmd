@@ -1,0 +1,162 @@
+---
+title: "mlgcp - results"
+output: html_document
+date: "2026-11-07"
+---
+```{r}
+#graphics.off()
+tmap_mode("plot")
+
+load("glm_m_map.RDATA")
+load("glm_m_oneq_map.RDATA")
+load("glm_m_individ_row_map.RDATA")
+
+load("glm_m_multi_u_map.RDATA")
+load("glm_m_oneq_map_multi_u.RDATA")
+load("glm_m_individ_row_multi_u_map.RDATA")
+
+load("glmnet_m_map.RDATA")
+load("glmnet_m_oneq_map.RDATA")
+load("glmnet_m_individ_row_map.RDATA")
+
+load("glmnet_m_multi_u_map.RDATA")
+load("glmnet_m_oneq_multi_u_map.RDATA")
+load("glmnet_m_individ_row_multi_u_map.RDATA")
+
+load("mlgcp_map.RDATA")
+load("mlgcp_map_multi_u.RDATA")
+
+load("gam_map.RDATA")
+load("scampr_map.RDATA")
+load("glm_map.RDATA")
+load("glmnet_map.RDATA")
+
+map_univariate = tmap_arrange(
+  gam_map,
+  scampr_map,
+  glm_map,
+  glmnet_map,
+  nrow = 1
+)
+tmap_save(map_univariate, "figures/map_univariate.png", width = 16, height = 4, dpi = 300)
+
+map_multivariate_glm_1 = tmap_arrange(
+  glm_m_map,
+  glm_m_oneq_map,
+  glm_m_individ_row_map,
+  mlgcp_map,
+  nrow = 1
+)
+tmap_save(map_multivariate_glm_1, "figures/map_multivariate_glm_1.png", width = 16, height = 4, dpi = 300)
+
+map_multivariate_glm_2 = tmap_arrange(
+  glm_m_multi_u_map,
+  glm_m_oneq_map_multi_u,
+  glm_m_individ_row_multi_u_map,
+  mlgcp_map_multi_u,
+  nrow = 1
+)
+tmap_save(map_multivariate_glm_2, "figures/map_multivariate_glm_2.png", width = 16, height = 4, dpi = 300)
+
+map_multivariate_glmnet_1 = tmap_arrange(
+  glmnet_m_map,
+  glmnet_m_oneq_map,
+  glmnet_m_individ_row_map,
+  mlgcp_map,
+  nrow = 1
+)
+tmap_save(map_multivariate_glmnet_1, "figures/map_multivariate_glmnet_1.png", width = 16, height = 4, dpi = 300)
+
+map_multivariate_glmnet_2 = tmap_arrange(
+  glmnet_m_multi_u_map,
+  glmnet_m_oneq_multi_u_map,
+  glmnet_m_individ_row_multi_u_map,
+  mlgcp_map_multi_u,
+  nrow = 1
+)
+tmap_save(map_multivariate_glmnet_2, "figures/map_multivariate_glmnet_2.png", width = 16, height = 4, dpi = 300)
+
+
+load("time_mglm.RDATA")
+load("time_mglm_oneq.RDATA")
+load("time_mglm_individ_row.RDATA")
+load("time_mglmnet.RDATA")
+load("time_mglmnet_oneq.RDATA")
+load("time_mglmnet_individ_row.RDATA")
+load("time_mlgcp.RDATA")
+
+load("time_mglm_multi_u.RDATA")
+load("time_mglm_oneq_multi_u.RDATA")
+load("time_mglm_individ_row_multi_u.RDATA")
+load("time_mglmnet_multi_u.RDATA")
+load("time_mglmnet_oneq_multi_u.RDATA")
+load("time_mglmnet_individ_row_multi_u.RDATA")
+load("time_mlgcp_multi_u.RDATA")
+
+c(time_mglm, time_mglm_oneq, time_mglm_individ_row, time_mglmnet, time_mglmnet_oneq, time_mglmnet_individ_row, time_mlgcp)
+cat(
+  "alt_glm_m:", time_mglm, "\n",
+  "alt_glm_m_oneq:", time_mglm_oneq, "\n",
+  "alt_glm_m_individ_row:", time_mglm_individ_row, "\n",
+  "alt_glmnet_m:", time_mglmnet, "\n",
+  "alt_glmnet_m_oneq:", time_mglmnet_oneq, "\n",
+  "alt_glmnet_m_individ_row:", time_mglmnet_individ_row, "\n",
+  "mlgcp:", time_mlgcp, "\n"
+)
+
+c(time_mglm_multi_u, time_mglm_oneq_multi_u, time_mglm_individ_row_multi_u, time_mglmnet_multi_u, time_mglmnet_oneq_multi_u, time_mglmnet_individ_row_multi_u, time_mlgcp_multi_u)
+cat(
+  "alt_glm_m_multi_u:", time_mglm_multi_u, "\n",
+  "alt_glm_m_oneq_multi_u:", time_mglm_oneq_multi_u, "\n",
+  "alt_glm_m_individ_row_multi_u:", time_mglm_individ_row_multi_u, "\n",
+  "alt_glmnet_m_multi_u:", time_mglmnet_multi_u, "\n",
+  "alt_glmnet_m_oneq_multi_u:", time_mglmnet_oneq_multi_u, "\n",
+  "alt_glmnet_m_individ_row_multi_u:", time_mglmnet_individ_row_multi_u, "\n",
+  "mlgcp_multi_u:", time_mlgcp_multi_u, "\n"
+)
+
+load("loglik_new_gam.RDATA")
+load("loglik_new_scampr.RDATA")
+load("loglik_new_glm.RDATA")
+load("loglik_new_glmnet.RDATA")
+
+load("loglik_new_mglm.RDATA")
+load("loglik_new_mglm_oneq.RDATA")
+load("loglik_new_mglm_individ_row.RDATA")
+load("loglik_new_mglmnet.RDATA")
+load("loglik_new_mglmnet_oneq.RDATA")
+load("loglik_new_mglmnet_individ_row.RDATA")
+load("loglik_new_mlgcp.RDATA")
+
+load("loglik_new_mglm_multi_u.RDATA")
+load("loglik_new_mglm_oneq_multi_u.RDATA")
+load("loglik_new_mglm_individ_row_multi_u.RDATA")
+load("loglik_new_mglmnet_multi_u.RDATA")
+load("loglik_new_mglmnet_oneq_multi_u.RDATA")
+load("loglik_new_mglmnet_individ_row_multi_u.RDATA")
+load("loglik_new_mlgcp_multi_u.RDATA")
+
+c(loglik_new_mglm, loglik_new_mglm_oneq, loglik_new_mglm_individ_row, loglik_new_mglmnet, loglik_new_mglmnet_oneq, loglik_new_mglmnet_individ_row, loglik_new_mlgcp)
+cat(
+  "alt_glm_m:", loglik_new_mglm, "\n",
+  "alt_glm_m_oneq:", loglik_new_mglm_oneq, "\n",
+  "alt_glm_m_individ_row:", loglik_new_mglm_individ_row, "\n",
+  "alt_glmnet_m:", loglik_new_mglmnet, "\n",
+  "alt_glmnet_m_oneq:", loglik_new_mglmnet_oneq, "\n",
+  "alt_glmnet_m_individ_row:", loglik_new_mglmnet_individ_row, "\n",
+  "mlgcp:", loglik_new_mlgcp, "\n"
+)
+
+c(loglik_new_mglm_multi_u, loglik_new_mglm_oneq_multi_u, loglik_new_mglm_individ_row_multi_u, loglik_new_mglmnet_multi_u, loglik_new_mglmnet_oneq_multi_u, loglik_new_mglmnet_individ_row_multi_u, loglik_new_mlgcp_multi_u)
+cat(
+  "alt_glm_m_multi_u:", loglik_new_mglm_multi_u, "\n",
+  "alt_glm_m_oneq_multi_u:", loglik_new_mglm_oneq_multi_u, "\n",
+  "alt_glm_m_individ_row_multi_u:", loglik_new_mglm_individ_row_multi_u, "\n",
+  "alt_glmnet_m_multi_u:", loglik_new_mglmnet_multi_u, "\n",
+  "alt_glmnet_m_oneq_multi_u:", loglik_new_mglmnet_oneq_multi_u, "\n",
+  "alt_glmnet_m_individ_row_multi_u:", loglik_new_mglmnet_individ_row_multi_u, "\n",
+  "mlgcp_multi_u:", loglik_new_mlgcp_multi_u, "\n"
+)
+
+
+```
