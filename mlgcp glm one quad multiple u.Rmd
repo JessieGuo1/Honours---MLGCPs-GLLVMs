@@ -21,18 +21,10 @@ library(glmnet)
 library(scampr)
 #install.packages("glmmTMB_1.1.9-9000.tar.gz",  repos = NULL, type = "source")
 library(glmmTMB)
-set.seed(0)
 
 # get the data
 source("get_and_format_flora_data.R")
 rm(dat_pa)
-
-# get the relevant predictors according to pred_set (these are all basically derived from elevation, we are just looking at moisture and temp. covars and soil fertility score and disturbance index)
-# preds <- switch(pred_set,
-#                 A = "None",
-#                 B = c("mi", "tempann"),
-#                 C = c("mi", "tempann", "mi2", "tempann2"),
-# )
 
 # get a vector of the factor terms
 facts <- c("disturb", "soilfert", "vegsis")
@@ -107,7 +99,7 @@ Z_row = rbind(Z_pres, Z_quad_rep)
 
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor R CRASHES DURING SPECIES UPDATE LOOP}
-
+set.seed(0)
 #initialise shared latent spatial field coefficients (u), one per basis function
 u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(Z_star), 0, 1))
 
@@ -238,7 +230,7 @@ border_lonlat = disBorder("NSW")
 tmap_mode("plot")
 
 load("m_intensity_map.RDATA")
-glm_m_oneq_map_multi_u = m_intensity_map(grid_pred_lonlat, species_label = 19)
+glm_m_oneq_map_multi_u = m_intensity_map(grid_pred_lonlat, model_label = "alt_glm, One Quad. Dataset, 2 l.v.")
 print(glm_m_oneq_map_multi_u)
 save(glm_m_oneq_map_multi_u, file = "glm_m_oneq_map_multi_u.RDATA")
 ```

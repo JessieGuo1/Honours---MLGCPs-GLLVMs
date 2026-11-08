@@ -23,18 +23,10 @@ library(glmnet)
 library(scampr)
 #install.packages("glmmTMB_1.1.9-9000.tar.gz",  repos = NULL, type = "source")
 library(glmmTMB)
-set.seed(0)
 
 # get the data
 source("get_and_format_flora_data.R")
 rm(dat_pa)
-
-# get the relevant predictors according to pred_set (these are all basically derived from elevation, we are just looking at moisture and temp. covars and soil fertility score and disturbance index)
-# preds <- switch(pred_set,
-#                 A = "None",
-#                 B = c("mi", "tempann"),
-#                 C = c("mi", "tempann", "mi2", "tempann2"),
-# )
 
 # get a vector of the factor terms
 facts <- c("disturb", "soilfert", "vegsis")
@@ -69,22 +61,9 @@ domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y 
 gc()
 ```
 
-```{r}
-# need a function to strip environments from the model objects so they can be saved without being massive
-rm.env <- function(m) {
-  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-  m
-}
-```
-
 
 ```{r gam}
+set.seed(0)
 #inhomogeneous Poisson process
 f1 <- occ / wt ~ mi + tempann
 ipp <- glm(f1, data = dat, family = poisson,  weights = wt)
@@ -104,8 +83,8 @@ objective_fn = function(rho) {
 }
 
 load("opt.RDATA")
-#opt <- optimize(objective_fn, interval = range_interval)
-#save(opt, file = "opt.RDATA")
+opt <- optimize(objective_fn, interval = range_interval)
+save(opt, file = "opt.RDATA")
 
 #log-Gaussian Cox process
 f2 <- update(f1, ~. +  s(x, y, bs = "gp", k = 5, m = c(3, opt$minimum)))
@@ -149,73 +128,10 @@ intensity_map = function(grid_pred_lonlat, title = ""){
 }
 
 save(intensity_map, file = "intensity_map.RDATA")
-gam_map = intensity_map(grid_pred_lonlat, title = "gam Species: 19")
+gam_map = intensity_map(grid_pred_lonlat, title = "gam")
 print(gam_map)
 save(gam_map, file = "gam_map.RDATA")
 
-```
-
-
-```{r Inhomogeneous K functions}
-# Diagnostic for chosen species, target_species_id
-# Calculate observed, simulated inhomogeneous K functions
-
-# Propagate variance of spatially varying term through smoothed terms at every grid location
-smooth = predict(m, newdata = domain, type = "terms", terms = "s(x,y)")
-var_smooth = var(drop(smooth))
-
-# This species' fixed-effect linear predictor - used as mean
-domain$mean = predict(m, newdata = domain, type = "link", exclude = "s(x,y)")
-
-# Predict intensity values over grid values
-domain$intensity = predict(m, newdata = domain, type = "response")
-
-# Build observation window in same coordinate system used throughout
-border_xy = st_transform(border_lonlat, crs = 28356)
-# Convert projected coordinates to kilometres to match domain$x/y/xm/ym
-border_geom = st_union(st_geometry(border_xy)) / 1000
-# Remove CRS metadata for spatstat
-st_crs(border_geom) = NA
-win = as.owin(st_sf(geometry = border_geom))
-
-# Convert fixed-effect log-intensity surface and full fitted intensity surface into spatstat pixel images
-fixed.im = as.im(domain[, c("x", "y", "mean")], W = win)
-pred.im = as.im(domain[, c("x","y","intensity")], W = win)
-
-
-po_sp_ppp = ppp(x = pres$x,
-                y = pres$y,
-                window = win)
-save(po_sp_ppp, file = "po_sp_ppp.RDATA")
-
-#plot(win)
-#points(po_sp_ppp, pch = 1, col = "red", size = 0.8)
-
-# Observed inhomogeneous K-function for this species, using its fitted intensity surface
-gam_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
-# Simulate comparison point patterns from a Matern log-Gaussian Cox process and construct simulation envelope
-gam_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = sqrt(3)*opt$minimum)))
-
-# Plot observed K-function and simulation envelope
-Kfunc = function(K_obs, K_env){
-  plot(K_env$r, K_env$mmean, type = "n", ylim = range(c(K_env$obs, K_env$hi, K_env$lo)), ylab = "", xlab = "") #r = seq. of distance at which K-func eval. mmean = mean K(r), range contains both observed func, complete sim. envelope hi & lo
-  polygon(c(rev(K_env$r), K_env$r), c(rev(K_env$hi), K_env$lo), col = 'grey80', border = NA) #rev() to trace the outside of the envelope
-  lines(K_env$r, K_env$mmean, lty = "dashed")
-  lines(K_obs$r, K_obs$border, col = "red")
-  mtext(text = "distance (km)", side = 1, srt = 90, cex = 1, line = 2)
-  mtext(text = "Inhomogeneous K Function", side = 2, srt = 90, cex = 1, xpd = T, line = 2.5)
-  mtext(text = "log-Gaussian Cox Process", side = 3, cex = 1, line = 0.5, adj = 0)
-  legend("bottomright", legend = c("Observed", "Theoretic", "95% Sim. Bounds"),
-         col = c("red", "black", "grey80"), lty = c("solid", "dashed", "solid"), cex = 0.7,
-         lwd = c(2, 2, 2), bty = "n")
-}
-save(Kfunc, file = "Kfunc.RDATA")
-Kfunc(gam_K_obs, gam_K_env)
-gam_kfunc = recordPlot()
-
-save(gam_kfunc, file = "gam_kfunc.RDATA")
-#load("gam_kfunc.RDATA")
-replayPlot(gam_kfunc)
 ```
 
 
@@ -223,6 +139,8 @@ replayPlot(gam_kfunc)
 ```{r scampr}
 # fit an IPP
 library(scampr)
+set.seed(0)
+
 m.ipp <- scampr(occ ~ mi + tempann,
                 data = dat, #predictors, coordinates, quadrature weights at point events and quadrature points
                 coord.names = c("x", "y"), 
@@ -231,22 +149,22 @@ m.ipp <- scampr(occ ~ mi + tempann,
                 include.sre	= FALSE)
 
 # can fit increasingly dense, regular grids of basis functions
-#bf.search.res <- basis.search(m.ipp, # base model, usually an IPP
-#                              max.basis.functions = 300, # stopping point to configurations to trial
-#                              which.approx = "variational", return.model #= FALSE) # LGCP model type: variational or Laplace (the latter longer to compute)
-#save(bf.search.res, file = "bf.search.res.RDATA")
+bf.search.res <- basis.search(m.ipp, # base model, usually an IPP
+                              max.basis.functions = 300, # stopping point to configurations to trial
+                              which.approx = "variational", return.model = FALSE) # LGCP model type: variational or Laplace (the latter longer to compute)
+save(bf.search.res, file = "bf.search.res.RDATA")
 load("bf.search.res.RDATA")
 
 # use basis configuration that achieves maximum fitted likelihood
-#bfs <- simple_basis(bf.search.res$nodes[which.max(bf.search.res$ll)], dat)
+bfs <- simple_basis(bf.search.res$nodes[which.max(bf.search.res$ll)], dat)
 # fit Laplace version of proposed model using "best" basis configuration:
-#m.lgcp_lp <- scampr(occ ~ mi + tempann,
-#                    data = dat, model.type = "PO",
-#                    include.sre	= TRUE,
-#                    sre.approx = "laplace",
-#                    basis.functions = bfs,
-#                    quad.weights.name = "wt")
-#save(m.lgcp_lp, file = "m.lgcp_lp.RDATA")
+m.lgcp_lp <- scampr(occ ~ mi + tempann,
+                    data = dat, model.type = "PO",
+                    include.sre	= TRUE,
+                    sre.approx = "laplace",
+                    basis.functions = bfs,
+                    quad.weights.name = "wt")
+save(m.lgcp_lp, file = "m.lgcp_lp.RDATA")
 load("m.lgcp_lp.RDATA")
 pred_scampr = predict(m.lgcp_lp, newdata = dat, type = "response")
 loglik_new_scampr = sum(dat$occ * log(pred_scampr) - dat$wt * pred_scampr)
@@ -265,464 +183,9 @@ grid_pred_lonlat = domain_stars
 
 # Mapping according to vignette
 load("intensity_map.RDATA")
-scampr_map = intensity_map(grid_pred_lonlat, title = "scampr Species: 19")
-print(scampr_map)
-save(scampr_map, file = "scampr_map.RDATA")
-```
-
-
-```{r Inhomogeneous K Function}
-# Diagnostic for chosen species, target_species_id
-# Calculate observed, simulated inhomogeneous K functions
-
-#ERROR
-#kinhom_lgcp <- kfunc_envelopes(m.lgcp_lp, # LGCP model
-#                               nsims = 1000, # change to 1000 to replicate results presented in paper
-#                               return.data = T)
-
-# Variance of shared latent spatial field coefficients u, common across all basis functions
-var_u = m.lgcp_lp$prior.variances[, "Estimate"]
-
-# Per-basis-function variance
-vars <- rep(var_u, m.lgcp_lp$basis.per.res)
-
-# Propagate coefficient variance through basis functions at every grid location - Var(sum_k Z_k(s) * u_k * lambda_jk) = sum_k [Z_k(s) * lambda_jk]^2 * Var(u_k)
-Z_domain_star = get.bf.matrix(m.lgcp_lp, domain[, c("x", "y")], bf.matrix.type = "sparse")
-var_smooth_grid <- drop(Z_domain_star^2 %*% vars)
-
-# Average propagated variance/spatial variance over prediction grid
-var_smooth = mean(var_smooth_grid)
-
-# This species' fixed-effect linear predictor - used as mean
-domain$mean = predict(m.lgcp_lp, newdata = domain, type = "link", dens = "prior")
-
-# Predict intensity values over domain
-domain$intensity = predict(m.lgcp_lp, newdata = domain, type = "response")
-
-# Convert fixed-effect log-intensity surface and full fitted intensity surface into spatstat pixel images
-fixed.im = as.im(domain[, c("x", "y", "mean")], W = win)
-pred.im = as.im(domain[,c("x","y","intensity")], W = win)
-
-# Observed inhomogeneous K-function for this species, using its fitted intensity surface
-scampr_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
-
-# Simulate comparison point patterns from a Matern log-Gaussian Cox process and construct simulation envelope
-scampr_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1]))) #sqrt(3)*opt$minimum
-
-# Plot observed K-function and simulation envelope
-Kfunc(scampr_K_obs, scampr_K_env)
-scampr_kfunc = recordPlot()
-save(scampr_kfunc, file = "scampr_kfunc.RDATA")
-
-#load("scampr_kfunc.RDATA")
-replayPlot(scampr_kfunc)
-
-#weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-loglik_new_scampr = sum(dat$presence * log(mu) - dat$quad.size * mu)
-cat("loglik:", loglik_new_scampr)
-```
-
-
-
-
-
-
-
-
-
-
-
-```{r data preprocessing}
-library(disdat)
-library(mgcv)
-library(sf)
-library(spatstat)
-library(fields)
-library(tmap)
-library(grid)
-library(units)
-set.seed(0)
-
-#Preprocessing data
-all = disData("NSW")
-po = disPo("NSW")
-bg = disBg("NSW")
-
-head(po)
-names(po)
-unique(po$spid)
-
-species_counts = table(po$spid)
-species = names(which.max(species_counts))
-species
-species_counts[species]
-
-po_sp = po[po$spid == species, ]
-
-setdiff(names(po_sp), names(bg))
-
-#po_sp$lon = po_sp$x
-#po_sp$lat = po_sp$y
-
-#project border
-library(units)
-border_lonlat = disBorder("NSW")
-
-#project presence points
-po_sp_lonlat = st_as_sf(po_sp, coords = c("x", "y"), crs = 4326, remove = FALSE) #convert to sf object, remove = FALSE keeps x, y
-save(po_sp_lonlat, file = "po_sp_lonlat.RDATA")
-
-bg_lonlat = st_as_sf(bg, coords = c("x", "y"), crs = 4326, remove = FALSE)
-
-target_crs = 3577 # Australian Albers, coordinates in metres
-
-border_proj = st_transform(border_lonlat, crs = target_crs) #convert coordinates
-po_sp_proj = st_transform(po_sp_lonlat, crs = target_crs) 
-bg_proj = st_transform(bg_lonlat, crs = target_crs)
-
-coords_po = st_coordinates(po_sp_proj) #retrieve coordinates in matrix form
-coords_bg = st_coordinates(bg_proj)
-
-po_model = st_drop_geometry(po_sp_proj)
-bg_model = st_drop_geometry(bg_proj)
-
-po_model$x = coords_po[, "X"]/1000 # kilometres
-po_model$y = coords_po[, "Y"]/1000
-
-bg_model$x <- coords_bg[, "X"]/1000
-bg_model$y <- coords_bg[, "Y"]/1000
-
-save(po_model, file = "po_model.RDATA")
-save(bg_model, file = "bg_model.RDATA")
-
-#check points and boundary
-map_po <- tm_shape(border_proj) + # create tmap object
-  tm_polygons() + # add the border
-  tm_shape(po_sp_proj) + # create tmap object for the points to overlay
-  tm_dots(size = 0.2, col = "blue", alpha = 0.6, legend.show = FALSE) + # add the points
-  tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
-  tm_layout(main.title = "Training data", main.title.position = "center") + # manage the layout
-  tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
-          labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
-
-  graphics.off()          # close corrupted/open graphics devices
-  tmap_mode("plot")       # ensure static plotting mode
-  print(map_po)
-
-covar_names = c("cti", "disturb", "mi", "rainann", "raindq", "rugged",
-                "soildepth", "soilfert", "solrad", "tempann", "tempmin", "topo", "vegsys")
-cont_vars <- setdiff(covar_names, "vegsys")
-
-po_keep = complete.cases(po_model[, covar_names])
-bg_keep = complete.cases(bg_model[, covar_names])
-
-po_sp_lonlat = po_sp_lonlat[po_keep, ]
-bg_lonlat = bg_lonlat[bg_keep, ]
-
-domain_area_km2 <- as.numeric(set_units(sum(st_area(border_proj)), km^2))
-quad_wt <- domain_area_km2 / nrow(bg_model) #quadrature weights
-
-#win = as.owin(border_sf) #st_sfc holds list of geometry objects --> observation window, NA_crs_ strip coordinate reference system
-```
-
-
-```{r gam}
-#processed dataframes
-presence_df = data.frame(
-  x = po_model$x, y = po_model$y,
-  po_model[, covar_names],
-  pt = 1, 
-  wt = 1e-6)
-
-quad = data.frame(
-  x = bg_model$x, y = bg_model$y,
-  bg_model[, covar_names],
-  pt = 0,
-  wt = quad_wt)
-
-#combine presence and quadrature points
-dat = rbind(presence_df, quad) 
-
-dat$vegsys <- factor(dat$vegsys)
-
-#scale
-dat_scaled = scale(dat[, cont_vars])
-centers = attr(dat_scaled, "scaled:center")
-scales  = attr(dat_scaled, "scaled:scale")
-dat[, cont_vars] = as.data.frame(dat_scaled) 
-
-bg_covariates_raw = bg_model[, cont_vars, drop = FALSE] # preserves dimensions - dataframe/matrix
-
-#inhomogeneous Poisson process
-f1 <- pt / wt ~ tempann + rainann + rugged
-ipp <- glm(f1, data = dat, family = poisson,  weights = wt)
-coef(ipp)
-
-#spatial range parameter - optimising with respect to rho, optimise REML criterion that penalises roughness - optimise marginal L (marginalising over b_j and approximated via Laplace)
-presence_xy = as.matrix(presence_df[, c("x", "y")])
-
-dists <- nndist(presence_xy) #nearest neigh dist.
-range_interval <- range(dists[dists != 0])
-range_interval <- quantile(dists, probs = c(0.1, 0.9), na.rm = TRUE)
-
-objective_fn = function(rho) {
-  tmp.m = gam(pt / wt ~ tempann + rainann + rugged + s(x, y, bs = "gp", k = 100, m = c(3,rho)), #Gauss. Proce, m = (corr fn -- matern, range)
-              data=dat, family=poisson(), weights=wt, method="REML")
-  return(tmp.m$gcv.ubre) # the "method" specific criterion
-}
-
-load("opt.RDATA")
-#opt <- optimize(objective_fn, interval = range_interval)
-#save(opt, file = "opt.RDATA")
-
-#log-Gaussian Cox process
-f2 <- update(f1, ~. +  s(x, y, bs = "gp", k = 5, m = c(3, opt$minimum)))
-m <- gam(f2, data = dat, family = poisson(),  weights = wt, method = "REML")
-pred_gam = predict(m, newdata = dat, type = "response")
-
-# create grid 
-grid_cells_proj = st_make_grid(
-  border_proj,
-  n = c(200, 200),
-  what = "polygons"
-)
-grid_centres_proj <- st_centroid(grid_cells_proj)
-
-# keep cells with centres that lie within border of NSW
-inside <- lengths(st_within(grid_centres_proj, border_proj)) > 0 # st_within checks if spatial features are completely inside other features
-grid_cells_proj <- grid_cells_proj[inside]
-save(grid_cells_proj, file = "grid_cells_proj.RDATA")
-
-grid_centres_proj <- grid_centres_proj[inside]
-
-# extract coordinates 
-grid_coords_m = st_coordinates(grid_centres_proj)
-
-grid_xy <- data.frame(
-  x = grid_coords_m[, "X"]/1000,
-  y = grid_coords_m[, "Y"]/1000
-)
-
-# Using unscaled background covariates as response in thin plate spline
-cont_vars_new = c("tempann", "rainann", "rugged")
-
-load("grid_xy.RDATA")
-library(fields)
-#for (cn in cont_vars_new) {
-#  fit_cov = Tps(x = cbind(bg_model$x, bg_model$y), Y = bg_covariates_raw[[cn]]) #thin plate spline regression - fits smooth multidim surface to irregularly spaced data
-#  raw_pred = as.numeric(predict(fit_cov, as.matrix(grid_xy[, c("x", "y")])))
-#  grid_xy[[cn]] = (raw_pred - centers[[cn]]) / scales[[cn]] # apply dat's scaling
-#}
-
-#save(grid_xy, file = "grid_xy.RDATA")
-
-#predict the fitted intensity at every grid cell
-grid_xy$z = predict(m, newdata = grid_xy, type = "response")
-
-grid_pred_proj = st_sf(intensity = grid_xy$z,
-                       log_intensity = log(grid_xy$z),
-                       geometry = grid_cells_proj) #simple feature obj, dataframe containing spatial geometries
-grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
-
-# Mapping according to vignette
-intensity_map = function(grid_pred_lonlat, title){
-  map <- tm_shape(border_lonlat) + # create tmap object
-    tm_polygons() + # add border
-    tm_shape(grid_pred_lonlat) + # create tmap object for points to overlay
-    tm_polygons(fill = "log_intensity",
-                fill.scale = tm_scale_continuous(
-                  values = "turbo",
-                  limits =  c(-8, 0),
-                  outliers.trunc = c(TRUE, TRUE)),
-                col = NA,
-                fill.legend = tm_legend(title = "Log fitted intensity")) +
-    tm_shape(po_sp_lonlat) +
-    tm_dots(size = 0.2, fill = "red", shape = 4, fill_alpha = 0.8) + #, fill.legend = tm_legend_hide()) + # add the points
-    tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
-    tm_title(title) + # manage the layout
-    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
-            labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
-  
-#  graphics.off()          # close corrupted/open graphics devices
-#  tmap_mode("plot")       # ensure static plotting mode
-#  print(map)
-  
-#  tmap_arrange(
-#    map_po,
-#    map,
-#    ncol = 2)
-}
-save(intensity_map, file = "intensity_map.RDATA")
-gam_map = intensity_map(grid_pred_lonlat, title = "gam")
-save(gam_map, file = "gam_map.RDATA")
-print(gam_map)
-print(gam_map)
-# calculate the observed, simulated K functions -- distinguishes true small-scale clustering or inhibition from environmental gradients.
-border_km = st_union(st_geometry(border_proj))/1000
-st_crs(border_km) = NA
-win = as.owin(st_sf(geometry = border_km))
-
-po_sp_ppp = ppp(x = presence_df$x,
-                y = presence_df$y,
-                window = win)
-save(po_sp_ppp, file = "po_sp_ppp.RDATA")
-
-plot(win)
-points(po_sp_ppp, pch = 1, col = "red", size = 0.8)
-
-# set the domain data points (quadrature used)
-domain.grid <- subset(grid_xy, select = -z)
-
-# predict intensity values
-domain.grid$z = predict(m, newdata=domain.grid, type = "response")
-
-# parameter values
-smooth = predict(m, newdata = domain.grid, type = "terms", terms = "s(x,y)")
-var_smooth = var(drop(smooth))
-domain.grid$mu = predict(m, newdata = domain.grid, type = "link", exclude = "s(x,y)")
-fixed.im = as.im(domain.grid[, c("x", "y", "mu")], W = win)
-# create  pixel images
-pred.im = as.im(domain.grid[,c("x","y","z")], W = win)
-
-# simulate the envelopes/bounds
-gam_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
-gam_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = sqrt(3)*opt$minimum)))
-
-# Create Inhomogeneous K-func graphs
-Kfunc = function(K_obs, K_env){
-  plot(K_env$r, K_env$mmean, type = "n", ylim = range(c(K_env$obs, K_env$hi, K_env$lo)), ylab = "", xlab = "") #r = seq. of distance at which K-func eval. mmean = mean K(r), range contains both observed func, complete sim. envelope hi & lo
-  polygon(c(rev(K_env$r), K_env$r), c(rev(K_env$hi), K_env$lo), col = 'grey80', border = NA) #rev() to trace the outside of the envelope
-  lines(K_env$r, K_env$mmean, lty = "dashed")
-  lines(K_obs$r, K_obs$border, col = "red")
-  mtext(text = "distance (km)", side = 1, srt = 90, cex = 1, line = 2)
-  mtext(text = "Inhomogeneous K Function", side = 2, srt = 90, cex = 1, xpd = T, line = 2.5)
-  mtext(text = "log-Gaussian Cox Process", side = 3, cex = 1, line = 0.5, adj = 0)
-  legend("bottomright", legend = c("Observed", "Theoretic", "95% Sim. Bounds"),
-         col = c("red", "black", "grey80"), lty = c("solid", "dashed", "solid"), cex = 0.7,
-         lwd = c(2, 2, 2), bty = "n")
-}
-save(Kfunc, file = "Kfunc.RDATA")
-gam_kfunc = Kfunc(gam_K_obs, gam_K_env)
-
-#weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-loglik_new_gam = sum(dat$pt * log(mu) - dat$wt * mu)
-cat("loglik:", loglik_new_gam)
-```
-
-
-```{r scampr}
-presence_df = data.frame(
-  x = po_model$x, y = po_model$y,
-  po_model[, covar_names],
-  presence = 1, 
-  quad.size = 0) #quadrature weights not used at the point events
-
-quad = data.frame(
-  x = bg_model$x, y = bg_model$y,
-  bg_model[, covar_names],
-  presence = 0,
-  quad.size = quad_wt)
-
-dat = rbind(presence_df, quad) 
-
-dat$vegsys <- factor(dat$vegsys)
-
-#scale
-dat_scaled = scale(dat[, cont_vars])
-centers = attr(dat_scaled, "scaled:center")
-scales  = attr(dat_scaled, "scaled:scale")
-dat[, cont_vars] = as.data.frame(dat_scaled) 
-save(dat, file = "dat.RDATA")
-
-bg_covariates_raw = bg_model[, cont_vars, drop = FALSE] # preserves dimensions - dataframe/matrix
-
-#####################################
-## Fit an IPP and LGCP to the data ##
-#####################################
-
-# using scampr():
-
-# fit an IPP
-library(scampr)
-m.ipp <- scampr(presence ~ tempann + rainann + rugged,
-                data = dat, #predictors, coordinates, quadrature weights at point events and quadrature points
-                coord.names = c("x", "y"), 
-                quad.weights.name = "quad.size", # column name of quadrature weights in dat_po
-                model.type = "PO",
-                include.sre	= FALSE)
-
-# fit an LGCP
-m.lgcp_va <- scampr(presence ~ tempann + rainann + rugged,
-                    data = dat,
-                    coord.names = c("x", "y"),
-                    quad.weights.name = "quad.size",
-                    model.type = "PO",
-                    include.sre	= TRUE,
-                    sre.approx = "variational", # use either "variational" or "laplace" approximation
-                    basis.functions = simple_basis(9, dat)) # additionally supply basis functions
-
-# can fit increasingly dense, regular grids of basis functions
-bf.search.res <- basis.search(m.ipp, # base model, usually an IPP
-                              max.basis.functions = 300, # stopping point to configurations to trial
-                              which.approx = "variational", return.model = FALSE) # LGCP model type: variational or Laplace (the latter longer to compute)
-# use basis configuration that achieves maximum fitted likelihood
-bfs <- simple_basis(bf.search.res$nodes[which.max(bf.search.res$ll)], dat)
-# fit Laplace version of proposed model using "best" basis configuration:
-m.lgcp_lp <- scampr(presence ~ tempann + rainann + rugged,
-                    data = dat, model.type = "PO",
-                    include.sre	= TRUE,
-                    sre.approx = "laplace",
-                    basis.functions = bfs)
-save(m.lgcp_lp, file = "m.lgcp_lp.RDATA")
-pred_scampr = predict(m.lgcp_lp, newdata = dat, type = "response")
-
-#predict the fitted intensity at every grid cell
-load("grid_xy.RDATA")
-grid_xy$z = predict(m.lgcp_lp, newdata = grid_xy, type = "response")
-
-load("grid_cells_proj.RDATA")
-grid_pred_proj = st_sf(intensity = grid_xy$z,
-                       log_intensity = log(grid_xy$z),
-                       geometry = grid_cells_proj) #simple feature obj, dataframe containing spatial geometries
-grid_pred_lonlat = st_transform(grid_pred_proj, target = 4326)
-
-# Mapping according to vignette
-load("intensity_map.RDATA")
 scampr_map = intensity_map(grid_pred_lonlat, title = "scampr")
-save(scampr_map, file = "scampr_map.RDATA")
 print(scampr_map)
-
-#ERROR
-#kinhom_lgcp <- kfunc_envelopes(m.lgcp_lp, # LGCP model
-#                               nsims = 1000, # change to 1000 to replicate results presented in paper
-#                               return.data = T)
-
-# Calculate the observed, simulated K functions
-domain.grid = subset(grid_xy, select = -z)
-# predict intensity values
-domain.grid$z = predict(m.lgcp_lp, newdata=domain.grid, type = "response")
-
-# parameter values
-var_u = m.lgcp_lp$prior.variances[, "Estimate"]
-vars <- rep(var_u, m.lgcp_lp$basis.per.res)
-Z_grid = as.matrix(get.bf.matrix(m.lgcp_lp, grid_xy[, c("x", "y")], bf.matrix.type = "sparse"))
-var_smooth_grid <- drop(Z_grid^2 %*% vars)
-var_smooth = mean(var_smooth_grid)
-domain.grid$mu = predict(m.lgcp_lp, newdata = domain.grid, type = "link", dens = "prior")
-fixed.im = as.im(domain.grid[, c("x", "y", "mu")], W = win)
-# create  pixel images
-pred.im = as.im(domain.grid[,c("x","y","z")], W = win)
-
-# simulate the envelopes/bounds
-scampr_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border") #marginal.im
-scampr_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = m.lgcp_lp$basis.fn.info$scale[1]))) #sqrt(3)*opt$minimum
-
-# Create Inhomogeneous K-func graphs
-scampr_kfunc = Kfunc(scampr_K_obs, scampr_K_env)
-
-#weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-loglik_new_scampr = sum(dat$presence * log(mu) - dat$quad.size * mu)
-cat("loglik:", loglik_new_scampr)
+save(scampr_map, file = "scampr_map.RDATA")
 ```
 
 

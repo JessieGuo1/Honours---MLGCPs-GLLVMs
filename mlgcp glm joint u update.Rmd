@@ -21,7 +21,6 @@ library(glmnet)
 library(scampr)
 #install.packages("glmmTMB_1.1.9-9000.tar.gz",  repos = NULL, type = "source")
 library(glmmTMB)
-set.seed(0)
 
 # get the data
 source("get_and_format_flora_data.R")
@@ -87,9 +86,9 @@ if (is(bfs, "scampr.bf")) {
 }
 
 #evaluate basis functions at every data point
-#Z_star = bf_matrix(bfs, dat[, c("x", "y")])
+Z_star = bf_matrix(bfs, dat[, c("x", "y")])
 #Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
-#save(Z_star, file = "Z_star.RDATA")
+save(Z_star, file = "Z_star.RDATA")
 load("Z_star.RDATA")
 
 ```
@@ -97,7 +96,7 @@ load("Z_star.RDATA")
 
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor}
-
+set.seed(0)
 #initialise shared latent spatial field coefficients (u), one per basis function
 u = rnorm(ncol(Z_star), 0, 1)
 
@@ -188,7 +187,6 @@ save(time_mglm, file = "time_mglm.RDATA")
 
 
 ```{r Intensity map for a chosen species}
-
 X_domain = cbind(1, domain$mi, domain$tempann)
 Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
 
@@ -213,131 +211,9 @@ border_lonlat = disBorder("NSW")
 tmap_mode("plot")
 
 load("m_intensity_map.RDATA")
-glm_m_map = m_intensity_map(grid_pred_lonlat, species_label = 19)
+glm_m_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glm, Joint U Update, 1 l.v.")
 print(glm_m_map)
 save(glm_m_map, file = "glm_m_map.RDATA")
 ```
 
 
-
-```{r Inhomogeneous K functions Error : vector memory limit of 16.0 Gb reached, see mem.maxVSize() retrying}
-# Diagnostic for chosen species, target_species_id
-# Calculate observed, simulated inhomogeneous K functions
-
-# Species-specific loading
-lambda_j = lambda[j, ]
-
-# Latent spatial coefficients
-u_sim = rnorm(ncol(Z_star), 0, 1)
-
-# Simulated spatial field for this species
-spatial_sim = Z_domain_star%*%u_sim %*% lambda_j
-
-# Fixed + spatial component
-eta_sim <- X_domain %*% beta[j, ] + spatial_sim
-
-# Point process intensity
-intensity_sim = exp(eta_sim)
-domain$intensity = as.numeric(intensity_sim)
-
-# Build observation window in same coordinate system used throughout
-border_xy = st_transform(border_lonlat, crs = 28356)
-# Convert projected coordinates to kilometres to match domain$x/y/xm/ym
-border_geom = st_union(st_geometry(border_xy)) / 1000
-# Remove CRS metadata for spatstat
-st_crs(border_geom) = NA
-win = as.owin(st_sf(geometry = border_geom))
-
-# Convert fixed-effect log-intensity surface and full fitted intensity surface into spatstat pixel images
-pred.im = as.im(domain[, c("x","y","intensity")], W = win)
-
-# Rename pres_df's spid to match dat_rename's convention, then subset to just this species' own presence locations
-pres_df_rename = pres %>% 
-  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
-sp_presence_df = pres_df_rename[pres_df_rename$spid == target_species_id, ]
-
-# Build species' point pattern within study window using same kilometre-scale as win
-po_sp_ppp = ppp(x = sp_presence_df$xm,
-                y = sp_presence_df$ym,
-                window = win)
-
-# Observed inhomogeneous K-function for this species, using its fitted intensity surface
-glm_m_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
-# 'correction' To capture possible neighbouring points outside the window
-# Simulate comparison point patterns from a Matern log-Gaussian Cox process and construct simulation envelope
-glm_m_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rpoispp(pred.im)))
-
-# Plot observed K-function and simulation envelope
-load("Kfunc.RDATA")
-Kfunc(glm_m_K_obs, glm_m_K_env)
-glm_m_kfunc = recordPlot()
-save(glm_m_kfunc, file = "glm_m_kfunc.RDATA")
-
-load("glm_m_kfunc.RDATA")
-replayPlot(glm_m_kfunc)
-```
-
-
-```{r Inhomogeneous K functions vector memory limit, 113641 out of 587016 terms (19.4%) in FFT calculation of matrix square root were negative, and were set to zero}
-# Diagnostic for chosen species, target_species_id
-# Calculate observed, simulated inhomogeneous K functions
-
-# Species-specific loading
-lambda_j = lambda[j, ]
-
-# Variance of shared latent spatial field coefficients u, common across all basis functions, ridge penalty -> precision
-var_u = 1
-
-# Per-basis-function variance
-vars <- rep(var_u, ncol(Z_star))
-
-# Propagate coefficient variance through basis functions at every grid location - Var(sum_k Z_k(s) * u_k * lambda_jk) = sum_k [Z_k(s) * lambda_jk]^2 * Var(u_k)
-var_smooth_grid <- drop((Z_domain_star * lambda_j)^2 %*% vars)
-
-# Average propagated variance/spatil variance over prediction grid
-var_smooth = mean(var_smooth_grid)
-
-# This species' fixed-effect linear predictor - used as mean
-domain$mean = drop(X_domain %*% beta[j, ])
-
-domain$intensity = exp(domain$log_intensity)
-
-# Build observation window in same coordinate system used throughout
-border_xy = st_transform(border_lonlat, crs = 28356)
-# Convert projected coordinates to kilometres to match domain$x/y/xm/ym
-border_geom = st_union(st_geometry(border_xy)) / 1000
-# Remove CRS metadata for spatstat
-st_crs(border_geom) = NA
-win = as.owin(st_sf(geometry = border_geom))
-
-# Convert fixed-effect log-intensity surface and full fitted intensity surface into spatstat pixel images
-fixed.im = as.im(domain[, c("x", "y", "mean")], W = win)
-pred.im = as.im(domain[, c("x","y","intensity")], W = win)
-
-# Rename pres_df's spid to match dat_rename's convention, then subset to just this species' own presence locations
-pres_df_rename = pres %>% 
-  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
-sp_presence_df = pres_df_rename[pres_df_rename$spid == target_species_id, ]
-
-# Build species' point pattern within study window using same kilometre-scale as win
-po_sp_ppp = ppp(x = sp_presence_df$xm,
-                y = sp_presence_df$ym,
-                window = win)
-
-#load("opt.RDATA")
-
-# Observed inhomogeneous K-function for this species, using its fitted intensity surface
-glm_m_K_obs <- Kinhom(po_sp_ppp, lambda = pred.im, correction = "border")
-
-# Simulate comparison point patterns from a Matern log-Gaussian Cox process and construct simulation envelope
-glm_m_K_env <- envelope(po_sp_ppp, fun = Kinhom, simulate = expression(rLGCP(model = "matern", mu = fixed.im, var = var_smooth, nu = 3/2, scale = bfs$scale[1])))
-
-# Plot observed K-function and simulation envelope
-load("Kfunc.RDATA")
-Kfunc(glm_m_K_obs, glm_m_K_env)
-glm_m_kfunc = recordPlot()
-save(glm_m_kfunc, file = "glm_m_kfunc.RDATA")
-
-load("glm_m_kfunc.RDATA")
-replayPlot(glm_m_kfunc)
-```

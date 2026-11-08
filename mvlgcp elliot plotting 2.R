@@ -7,13 +7,6 @@ library(glmmTMB)
 source("get_and_format_flora_data.R")
 rm(dat_pa)
 
-# get the relevant predictors according to pred_set (these are all basically derived from elevation, we are just looking at moisture and temp. covars and soil fertility score and disturbance index)
-# preds <- switch(pred_set,
-#                 A = "None",
-#                 B = c("mi", "tempann"),
-#                 C = c("mi", "tempann", "mi2", "tempann2"),
-# )
-
 # get a vector of the factor terms
 facts <- c("disturb", "soilfert", "vegsis")
 
@@ -62,26 +55,11 @@ if (is(bfs, "scampr.bf")) {
 
 gc()
 
-################################################################################
-# Fit an intercepts-only model #################################################
-################################################################################
-
-# need a function to strip environments from the model objects so they can be saved without being massive
-#rm.env <- function(m) {
-#  attr(attr(m$frame, "terms"), ".Environment") <- NULL
-#  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
-#  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
-#  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
-#  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
-#  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
-#  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
-#  m
-#}
 
 ################################################################################
 # Fit the model including linear env terms #####################################
 ################################################################################
-
+set.seed(0)
 # with correlated fields only ##################################################
 time_i = system.time({try(assign("mB2", mvlgcp(occ ~ 0 + spid + spid:mi + spid:tempann,
                                                data = dat, weights = wt, basis.functions = bfs, response.id = spid, n_factors = 2,
@@ -106,7 +84,6 @@ time_mlgcp_multi_u = as.numeric(time_i[3])
 time_mlgcp_multi_u
 save(time_mlgcp_multi_u, file = "time_mlgcp_multi_u.RDATA")
 
-##########################
 #Using tmap
 target_species_id <- "nsw19"
 Lambda = get_loadings(mB2)
@@ -217,6 +194,6 @@ border_lonlat = disBorder("NSW")
 tmap_mode("plot")
 
 load("m_intensity_map.RDATA")
-mlgcp_map_multi_u = m_intensity_map(grid_pred_lonlat, species_label = 19)
+mlgcp_map_multi_u = m_intensity_map(grid_pred_lonlat, model_label = "mlgcp, 2 l.v.")
 print(mlgcp_map_multi_u)
 save(mlgcp_map_multi_u, file = "mlgcp_map_multi_u.RDATA")
