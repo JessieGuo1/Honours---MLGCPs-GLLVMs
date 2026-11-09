@@ -21,6 +21,7 @@ myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps
     penVec=ridgeParam
   if(length(ridgeParam)==1)
     penVec=rep(ridgeParam,p)
+  penMat = Diagonal(p,penVec)
   ll_old=1
   linkinv=poisson()$linkinv
   for(iIter in 1:nIter)
@@ -36,7 +37,7 @@ myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps
       break
     } 
     W=wts*mu
-    Info = crossprod(X,X*W)+Diagonal(p,penVec) # does elementwise multiplication, column-by-column
+    Info = crossprod(X,X*W)+penMat # does elementwise multiplication, column-by-column
     score = crossprod(X,wts*(y-mu)) - penVec*beta
     cf=Cholesky(Info)
     beta = beta_old + solve(cf,score)
