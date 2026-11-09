@@ -11,12 +11,15 @@ myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps
 {
   beta=beta_old=beta0
   p=ncol(X)
-  if(length(ridgeParam!=p)&length(ridgeParam!=1)
-     error("Ridge parameter has the wrong dimensions")
-  if(length(ridgeParam==1))
-     penVec=diag(rep(ridgeParam,p))
-  if(length(ridgeParam==p))
+  if(length(ridgeParam)!=p & length(ridgeParam)!=1)
+  {
+    message("Ridge parameter has the wrong dimensions")
+    break    
+  }
+  if(length(ridgeParam)==p)
      penVec=diag(ridgeParam)
+  if(length(ridgeParam)==1)
+    penVec=ridgeParam*diag(p)
   ll_old=1
   for(iIter in 1:nIter)
   {
