@@ -7,6 +7,7 @@
 # ridge penalty:
 # replace second deriv with (X'WX+eps*I)
 
+library(Matrix)
 myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps=1.e-8)
 {
   beta=beta_old=beta0
@@ -17,30 +18,39 @@ myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps
     break    
   }
   if(length(ridgeParam)==p)
-     penVec=diag(ridgeParam)
+    penVec=ridgeParam
   if(length(ridgeParam)==1)
-    penVec=ridgeParam*diag(p)
+    penVec=rep(ridgeParam,p)
   ll_old=1
+  linkinv=poisson()$linkinv
   for(iIter in 1:nIter)
   {
-    eta = X%*%beta + offset
-    mu=poisson()$linkinv(eta)
-    ll_new=sum(dpois(y,mu,log=TRUE)*wts)
+    eta = crossprod(t(X),beta) + offset
+    mu=as.vector(linkinv(eta))
+    penTerm = crossprod(beta,sqrt(penVec))/2
+    ll_new=as.numeric(sum(dpois(y,mu,log=TRUE)*wts)-penTerm)
     deltaLL = (ll_new-ll_old)/ll_old
-    print(c(beta,ll_new,deltaLL))
+    print(c(as.numeric(beta),as.numeric(ll_new),as.numeric(deltaLL)))
     if(abs(deltaLL)<eps){
       message("convergence")
       break
     } 
-    Info = crossprod(X*sqrt(wts*mu))+penVec # does elementwise multiplication, column-by-column
-    Xmu = crossprod(X,wts*(y-mu))
-    beta = beta_old + solve(Info) %*% t(Xmu)
+    W=wts*mu
+    Info = crossprod(X,X*W)+Diagonal(p,penVec) # does elementwise multiplication, column-by-column
+    score = crossprod(X,wts*(y-mu)) - penVec*beta
+    cf=Cholesky(Info)
+    beta = beta_old + solve(cf,score)
     beta_old=beta
     ll_old=ll_new
   }
 }
 
-n=10
-X=matrix(1:n)
-y=rpois(n,lambda=X)
-myglm(y,X,beta0=0)
+n=100
+p = 0.2 #sparsity of X
+X=cbind(1,matrix(1:n)/n*rbinom(n,1,p))
+Xs=Matrix(X)
+y=rpois(n,lambda=exp(X[,2]))
+myglm(y,X,beta0=c(0,0))
+glm(y~0+X,family=poisson()) #check
+system.time(myglm(y,X,beta0=c(0,0))) #this is faster for v big n (>10^5) and sparse X
+system.time(glm(y~0+X,family=poisson()))
