@@ -211,3 +211,14 @@ print(glm_m_multi_u_map)
 save(glm_m_multi_u_map, file = "glm_m_multi_u_map.RDATA")
 ```
 
+
+```{r}
+load("identify_ulambda.RDATA")
+ULambda = identify_ulambda(u, lambda)
+
+U_glm = ULambda$U
+Lambda_glm = ULambda$Lambda
+save(U_glm, Lambda_glm, file = "U_Lambda_glm.RDATA")
+```
+
+

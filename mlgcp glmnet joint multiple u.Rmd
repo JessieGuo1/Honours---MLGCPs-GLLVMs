@@ -98,6 +98,7 @@ u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(Z_star), 0, 1))
 # Convert species IDs to numeric
 dat_rename = dat %>% 
   mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+save(dat_rename, file = "dat_rename.RDATA")
 
 attach(dat_rename)
 
@@ -163,7 +164,7 @@ time_i = system.time({for (iter in 1:N){
   
   # Fixed-effect linear predictor
   offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
-
+  
   # Shared-field design matrix
   Zl_joint = cbind(Z_star * lambda_rep[, 1], Z_star * lambda_rep[, 2])
   
@@ -239,3 +240,14 @@ glmnet_m_multi_u_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glmn
 print(glmnet_m_multi_u_map)
 save(glmnet_m_multi_u_map, file = "glmnet_m_multi_u_map.RDATA")
 ```
+
+
+```{r}
+load("identify_ulambda.RDATA")
+ULambda = identify_ulambda(u, lambda)
+
+U_glmnet = ULambda$U
+Lambda_glmnet = ULambda$Lambda
+save(U_glmnet, Lambda_glmnet, file = "U_Lambda_glmnet.RDATA")
+```
+

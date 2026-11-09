@@ -62,7 +62,7 @@ gc()
 set.seed(0)
 # with correlated fields only ##################################################
 time_i = system.time({try(assign("mB2", mvlgcp(occ ~ 0 + spid + spid:mi + spid:tempann,
-                                               data = dat, weights = wt, basis.functions = bfs, response.id = spid, n_factors = 2,
+                                               data = dat, weights = dat$wt, basis.functions = bfs, response.id = dat$spid, n_factors = 2,
                                                control = glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)), mv.flds = "correlated")
 ))})
 
@@ -197,3 +197,13 @@ load("m_intensity_map.RDATA")
 mlgcp_map_multi_u = m_intensity_map(grid_pred_lonlat, model_label = "mlgcp, 2 l.v.")
 print(mlgcp_map_multi_u)
 save(mlgcp_map_multi_u, file = "mlgcp_map_multi_u.RDATA")
+
+
+u = get_bfs_coeff(mB2)
+lambda = get_loadings(mB2)
+
+load("identify_ulambda.RDATA")
+ULambda = identify_ulambda(u, lambda)
+U_mlgcp = ULambda$U
+Lambda_mlgcp = ULambda$Lambda
+save(U_mlgcp, Lambda_mlgcp, file = "U_Lambda_mlgcp.RDATA")

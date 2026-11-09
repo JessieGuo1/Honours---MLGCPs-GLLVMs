@@ -78,6 +78,7 @@ if (is(bfs, "scampr.bf")) {
   rm(tmp, bf.check)
 }
 
+save(bfs, file = "bfs.RDATA")
 # Evaluate basis functions at data locations
 Z_star = bf_matrix(bfs, dat[, c("x", "y")])
 #Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
@@ -217,6 +218,8 @@ save(loglik_new_mglmnet_individ_row_multi_u, file = "loglik_new_mglmnet_individ_
 time_mglmnet_individ_row_multi_u = as.numeric(time_i[3])
 time_mglmnet_individ_row_multi_u
 save(time_mglmnet_individ_row_multi_u, file = "time_mglmnet_individ_row_multi_u.RDATA")
+
+
 ```
 
 
@@ -259,3 +262,14 @@ print(glmnet_m_individ_row_multi_u_map)
 save(glmnet_m_individ_row_multi_u_map, file = "glmnet_m_individ_row_multi_u_map.RDATA")
 
 ```
+
+
+```{r}
+load("identify_ulambda.RDATA")
+ULambda = identify_ulambda(u, lambda)
+
+U_glmnet_individ_row = ULambda$U
+Lambda_glmnet_individ_row = ULambda$Lambda
+save(U_glmnet_individ_row, Lambda_glmnet_individ_row, file = "U_Lambda_glmnet_individ_row.RDATA")
+```
+

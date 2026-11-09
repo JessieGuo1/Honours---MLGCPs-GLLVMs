@@ -82,6 +82,7 @@ if (is(bfs, "scampr.bf")) {
   rm(tmp, bf.check)
 }
 
+save(bfs, file = "bfs_oneq.RDATA")
 # Evaluate basis functions at data locations
 Z_star = bf_matrix(bfs, dat[, c("x", "y")])
 #Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
@@ -268,4 +269,14 @@ load("m_intensity_map.RDATA")
 glmnet_m_oneq_multi_u_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glmnet, One Quad. Dataset, 2 l.v.")
 print(glmnet_m_oneq_multi_u_map)
 save(glmnet_m_oneq_multi_u_map, file = "glmnet_m_oneq_multi_u_map.RDATA")
+```
+
+
+```{r}
+load("identify_ulambda.RDATA")
+ULambda = identify_ulambda(u, lambda)
+
+U_glmnet_oneq = ULambda$U
+Lambda_glmnet_oneq = ULambda$Lambda
+save(U_glmnet_oneq, Lambda_glmnet_oneq, file = "U_Lambda_glmnet_oneq.RDATA")
 ```

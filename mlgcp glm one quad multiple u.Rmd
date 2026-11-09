@@ -234,3 +234,13 @@ glm_m_oneq_map_multi_u = m_intensity_map(grid_pred_lonlat, model_label = "alt_gl
 print(glm_m_oneq_map_multi_u)
 save(glm_m_oneq_map_multi_u, file = "glm_m_oneq_map_multi_u.RDATA")
 ```
+
+
+```{r}
+load("identify_ulambda.RDATA")
+ULambda = identify_ulambda(u, lambda)
+
+U_glm_oneq = ULambda$U
+Lambda_glm_oneq = ULambda$Lambda
+save(U_glm_oneq, Lambda_glm_oneq, file = "U_Lambda_glm_oneq.RDATA")
+```

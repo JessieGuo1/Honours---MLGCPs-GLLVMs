@@ -160,3 +160,149 @@ cat(
 
 
 ```
+
+
+```{r}
+# set up the color guide scheme #
+
+# set up a matrix to rotate the coordinates
+theta <- -pi/10
+R <- matrix(c(cos(theta), -sin(theta), sin(theta), cos(theta)), nrow = 2)
+rot_coords <- t(R %*% t(apply(domain[,c("x", "y")], 2, function(x){x - min(x)})))
+# set up the continuous spatial color scheme
+x_colfn <- colorRampPalette(c("white", "black"))
+y_colfn <- colorRampPalette(c("blue", "gold"))
+domain$xcol <- x_colfn(nrow(domain))[as.numeric(cut(rot_coords[,1],breaks = nrow(domain)))]
+domain$ycol <- y_colfn(nrow(domain))[as.numeric(cut(rot_coords[,2],breaks = nrow(domain)))]
+for (i in 1:nrow(domain)) {
+  domain$xycol[i] <- colorRampPalette(c(domain$xcol[i], domain$ycol[i]))(3)[2]
+}
+
+
+png(filename = "figures/nsw_biplot.png")
+plot(vec2im(domain$xycol, domain$x, domain$y), valuesAreColors = T, box = F, main = "")
+mtext("A: Biplot with Domain Color Guide", side = 3, line = 0.5, adj = 0, xpd = T)
+par(xpd = T)
+points(mB2$basis.functions$x, mB2$basis.functions$y, bg = mB2$basis.functions$xycol, pch = 21, cex = 1.2)
+legend(x = 0.1, y = -0.1, legend = c("Basis function nodes", "Tree Locations"), pch = c(1, 4), bty = "n", xpd = T)
+dev.off()
+
+
+# function to add cols to the basis function nodes
+get_bfs_cols <- function(x) {
+  bfs <- if (!is.null(x$basis.functions)) x$basis.functions else x
+  ext.win <- owin(range(c(domain$x, bfs$x)), range(c(domain$y, bfs$y)))
+  bfs.pp <- ppp(x = bfs$x, y = bfs$y, window = ext.win)
+  domain.pp <- ppp(x = domain$x, y = domain$y, window = ext.win)
+  nn.bfs <- nncross(bfs.pp, domain.pp, what = "which")
+  domain$xycol[nn.bfs]
+}
+
+
+
+bfs_cols_mlgcp = get_bfs_cols(mB2)
+
+load("bfs.RDATA")
+bfs_cols_default = get_bfs_cols(bfs)
+
+load("bfs_oneq.RDATA")
+bfs_cols_oneq = get_bfs_cols(bfs)
+
+bfs_cols_all = list(
+  mlgcp = bfs_cols_mlgcp,
+  glm_joint = bfs_cols_default,
+  glm_individ_row = bfs_cols_default,
+  glm_oneq = bfs_cols_oneq,
+  glmnet_joint = bfs_cols_default,
+  glmnet_individ_row = bfs_cols_default,
+  glmnet_oneq = bfs_cols_oneq
+)
+
+load("dat_rename.RDATA")
+species = unique(dat_rename$spid)
+
+
+biplot_mlgcp <- function(u, lambda, species, bfs_cols, main = "") {
+  
+  # select species with largest loading magnitude
+  load_strength <- sqrt(rowSums(lambda^2))
+  selected_sp <- c(2, 4, 5, 6, 7, 14) # includes species 19
+  
+  # scale arrows to latent scores
+  lambda_sel = lambda[selected_sp, , drop = FALSE]
+  
+  #make longest arrow 1.2 units long through taking max length of an arrow
+  arrow_length = sqrt(rowSums(lambda_sel^2))
+  arrow_scale = 2/max(arrow_length)
+  
+  par(pty = "s")
+  plot(
+    u[, 1], u[, 2],
+    xlab = "LV1",
+    ylab = "LV2",
+    pch = 16,
+    col = bfs_cols,
+    asp = 1,
+    xlim = c(-3, 3),
+    ylim = c(-4, 2),
+    main = main
+  )
+  
+  arrows(
+    x0 = 0, y0 = 0,
+    arrow_scale * lambda_sel[, 1],
+    arrow_scale * lambda_sel[, 2],
+    length = 0.08
+  )
+  
+  text(
+    jitter(arrow_scale * lambda[selected_sp, 1], amount = 0.15),
+    jitter(arrow_scale * lambda[selected_sp, 2], amount = 0.15),
+    labels = species[selected_sp],
+    pos = 4,
+    cex = 0.7
+  )
+
+}
+
+dir.create("figures", showWarnings = TRUE)
+
+model_info = c(
+  "mlgcp", "glm_joint", "glm_individ_row", "glm_oneq",
+  "glmnet_joint", "glmnet_individ_row", "glmnet_oneq"
+)
+
+U_all = list(
+  mlgcp = U_mlgcp,
+  glm_joint = U_glm,
+  glm_individ_row = U_glm_individ_row,
+  glm_oneq = U_glm_oneq,
+  glmnet_joint = U_glmnet,
+  glmnet_individ_row = U_glmnet_individ_row,
+  glmnet_oneq = U_glmnet_oneq
+)
+
+Lambda_all = list(
+  mlgcp = Lambda_mlgcp,
+  glm_joint = Lambda_glm,
+  glm_individ_row = Lambda_glm_individ_row,
+  glm_oneq = Lambda_glm_oneq,
+  glmnet_joint = Lambda_glmnet,
+  glmnet_individ_row = Lambda_glmnet_individ_row,
+  glmnet_oneq = Lambda_glmnet_oneq
+)
+
+for (method in model_info) {
+  png(
+  filename = file.path("figures", paste0(method, "_biplot.png")),
+  width = 1800,
+  height = 1800,
+  res = 300
+)
+  biplot_mlgcp(U_all[[method]], Lambda_all[[method]], species, bfs_cols = bfs_cols_all[[method]], main = paste0("Biplot for ", method, " fit"))
+  dev.off()
+}
+
+
+```
+
