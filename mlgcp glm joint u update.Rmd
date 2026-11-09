@@ -1,0 +1,219 @@
+---
+title: "mlgcp glm joint u update"
+output: html_document
+date: "2026-10-07"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r Data Preprocessing}
+library(disdat)
+library(mgcv)
+library(sf)
+library(spatstat)
+library(fields)
+library(tmap)
+library(grid)
+library(units)
+library(stringr)
+library(dplyr)
+library(glmnet)
+library(scampr)
+#install.packages("glmmTMB_1.1.9-9000.tar.gz",  repos = NULL, type = "source")
+library(glmmTMB)
+
+# get the data
+source("get_and_format_flora_data.R")
+rm(dat_pa)
+
+# get the relevant predictors according to pred_set (these are all basically derived from elevation, we are just looking at moisture and temp. covars and soil fertility score and disturbance index)
+# preds <- switch(pred_set,
+#                 A = "None",
+#                 B = c("mi", "tempann"),
+#                 C = c("mi", "tempann", "mi2", "tempann2"),
+# )
+
+# get a vector of the factor terms
+facts <- c("disturb", "soilfert", "vegsis")
+
+# load the species information
+load("flora_species.RDATA")
+
+# get the groups to which the flora species belongs to subset the data
+flora_groups <- unique(sp.info$group)
+
+# subset the presence-only data (in the case we are using restricted species)
+pres <- pres[pres$group %in% flora_groups, ]
+
+# want to use species with at least 10 presences
+pres <- pres[pres$spid %in% names(table(pres$spid))[table(pres$spid) >= 10], ]
+
+# get the species
+species <- unique(pres$spid)
+
+# assign some numbers
+m <- length(species) # responses
+q <- nrow(quad) # quadrature points
+
+# add in the quadrature for each species (replicates of the supplied background points)
+tmp <- quad[rep(seq_len(q), m), ]
+tmp$spid <- rep(species, each = q) # assign the species id's
+dat <- rbind(pres, tmp)
+n <- nrow(dat)
+rm(tmp)
+
+# set the coordinates to x and y so we can just use default labels
+dat$lon <- dat$x; dat$lat <- dat$y; dat$x <- dat$xm; dat$y <- dat$ym; dat$xm <- NULL; dat$ym <- NULL
+
+load("domain.RDATA")
+domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
+
+gc()
+```
+
+
+
+```{r Build spatial basis functions}
+bfs <- make_basis(k = 50, domain, from.package = "scampr")
+
+# need to prune in the case of scampr bfs
+if (is(bfs, "scampr.bf")) {
+  tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")])) # via the data?
+  # tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
+  bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
+  bfs <- bfs[bf.check != 0, ]
+  rm(tmp, bf.check)
+}
+
+#evaluate basis functions at every data point
+Z_star = bf_matrix(bfs, dat[, c("x", "y")])
+#Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
+save(Z_star, file = "Z_star.RDATA")
+load("Z_star.RDATA")
+
+```
+
+
+
+```{r Fitting - alternating column/row updates (single latent spatial factor}
+set.seed(0)
+#initialise shared latent spatial field coefficients (u), one per basis function
+u = rnorm(ncol(Z_star), 0, 1)
+
+# Rename spid
+dat_rename = dat %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+
+attach(dat_rename)
+Zu = Z_star%*%u
+
+chosen_spid = unique(spid)
+n_species = length(chosen_spid)
+
+X_full = cbind(1, mi, tempann)
+
+beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Zu) + ncol(X_full))
+
+rows_by_species = split(seq_len(nrow(dat_rename)), spid)
+species_idx_row = match(spid, chosen_spid) #543323 x 1
+
+N = 1000 
+loglik = -Inf
+max_it = 3
+
+time_i = system.time({for (iter in 1:N){
+  X_Zu = cbind(X_full, Zu)
+
+  for (j in seq_along(chosen_spid)){
+    i = chosen_spid[j]
+    idx = rows_by_species[[as.character(i)]]
+    
+    X_i = X_Zu[idx, ]
+    
+    start_iter = if (all(is.finite(beta_lambda[j, ]))) {
+      beta_lambda[j, ]
+      } else {
+        NULL
+        }
+
+    glm1 = glm.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, start = start_iter, control = glm.control(maxit = max_it))
+    
+    # store this species' intercept + beta + lambda (1 loading)
+    beta_lambda[j, ] = t(c(glm1$coefficients))  
+  }
+
+  #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
+  beta_lambda
+  beta = beta_lambda[, 1:ncol(X_full)] #54 x 4
+  lambda = as.matrix(beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)])
+  
+  lambda_rep = lambda[species_idx_row, , drop = TRUE]
+
+  offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
+
+  Zl_joint = Z_star * lambda_rep 
+
+  start_iter_u = if (all(is.finite(u))) {
+    u} else {
+      NULL
+      }
+
+  glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), start = start_iter_u, control = glm.control(maxit = max_it))
+  
+  u = as.numeric(glm1$coefficients)
+  print(u)
+  
+  #rebuild Zu with updated u, for next iteration's column update
+  Zu = Z_star%*%u
+  eta = offset + rowSums(Zu * lambda_rep)
+  #eta = offset + (Z_star * lambda_rep) %*% u
+  mu = exp(eta)
+  pred_mglm = mu
+  
+  #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+  loglik_new_mglm = sum(occ * log(mu) - wt * mu)
+  cat("iter", iter, "loglik:", loglik_new_mglm, "\n")
+  
+  #stop once relative change in log-likelihood is small
+  if (is.finite(loglik) && abs(loglik_new_mglm - loglik)/ max(1, abs(loglik_new_mglm)) < 1e-6) break
+  loglik = loglik_new_mglm}
+})
+save(loglik_new_mglm, file = "loglik_new_mglm.RDATA")
+
+time_mglm = as.numeric(time_i[3])
+time_mglm
+save(time_mglm, file = "time_mglm.RDATA")
+```
+
+
+```{r Intensity map for a chosen species}
+X_domain = cbind(1, domain$mi, domain$tempann)
+Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
+
+Zu_domain = Z_domain_star %*% u
+
+target_species_id <- 19
+j = match(target_species_id, chosen_spid)
+
+sp_fld_glmnet = X_domain %*% beta[j, ] + Zu_domain %*% lambda[j, ]
+
+domain$log_intensity = as.numeric(sp_fld_glmnet[, 1])
+
+library(stars)
+domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
+grid_pred_lonlat = domain_stars
+
+species_points = dat_rename[dat_rename$spid == target_species_id & dat_rename$occ == 1, ]
+species_points_lonlat = st_as_sf(species_points, coords = c("lon", "lat"), crs = 4326)
+
+border_lonlat = disBorder("NSW")
+
+tmap_mode("plot")
+
+load("m_intensity_map.RDATA")
+glm_m_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glm, Joint U Update, 1 l.v.")
+print(glm_m_map)
+save(glm_m_map, file = "glm_m_map.RDATA")
+```
+
+

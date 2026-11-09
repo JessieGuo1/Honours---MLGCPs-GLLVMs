@@ -492,7 +492,7 @@ for (method in names(model_info)) {
   fit = get(model_info[[method]]$object)
   
   if (method == "gllvm") {
-    ULambda = identify_ulambda(fit$lvs, fit$params$theta)
+    ULambda = identify_ulambda(fit$lvs, fit$params$theta %*% diag(fit$params$sigma.lv))
   } else {
     ULambda = identify_ulambda(fit$u, fit$lambda)
   }
@@ -524,8 +524,9 @@ manual_biplot <- function(u, lambda, y, n_species = 10, site = Xenv$Xenv.Site,
   
   #colour-code sites
   site = factor(site)
-  site_cols = hcl.colors(nlevels(site), "Dynamic")
-  point_cols = site_cols[as.numeric(site)]
+  site_cols = c("#4477AA", "#EE6677", "#228833", "#CCBB44",
+            "#66CCEE", "#AA3377", "#BBBBBB", "#000000")
+  point_cols = site_cols[as.numeric(site)] 
   
   par(pty = "s")
   plot(
@@ -548,8 +549,8 @@ manual_biplot <- function(u, lambda, y, n_species = 10, site = Xenv$Xenv.Site,
   )
   
   text(
-    arrow_scale * lambda[selected_sp, 1],
-    arrow_scale * lambda[selected_sp, 2],
+    jitter(arrow_scale * lambda[selected_sp, 1], amount = 0.15),
+    jitter(arrow_scale * lambda[selected_sp, 2], amount = 0.15),
     labels = colnames(y)[selected_sp],
     pos = 4,
     cex = 0.7

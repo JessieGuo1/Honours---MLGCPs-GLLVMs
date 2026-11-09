@@ -305,7 +305,7 @@ loglik_new_all_jmle1
 ```
 
 
-```{r jmle, 2 l.v. K = ncol(sim_cou)}
+```{r jmle, 2 l.v. K = ncol(sim_counts)}
 # Generating model with 2 latent variables
 load("model_pred_2.RDATA")
 load("sim_counts_all_2.RDATA")
@@ -744,7 +744,7 @@ for (k in 1:B){
   
   save(glmnet_pen0.1_sim_2, file = file.path("glmnet_models/pen0.1", paste0("glmnet_pen0.1_sim_2_", k, ".RDATA")))
 
-  true_mu = model_pred$pred_counts
+  true_mu = model_pred_2$pred_counts
   pred_mu = glmnet_pen0.1_sim_2$pred_counts
   eta = glmnet_pen0.1_sim_2$eta
   KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
@@ -853,7 +853,7 @@ for (k in 1:B){
   
   save(glmnet_pen0.01_sim_2, file = file.path("glmnet_models/pen0.01", paste0("glmnet_pen0.01_sim_2_", k, ".RDATA")))
 
-  true_mu = model_pred$pred_counts
+  true_mu = model_pred_2$pred_counts
   pred_mu = glmnet_pen0.01_sim_2$pred_counts
   eta = glmnet_pen0.01_sim_2$eta
   KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
@@ -881,10 +881,6 @@ loglik_new_all_glmnet_pen0.01_2
 ```{r Plotting}
 library(ggplot2)
 B = 100
-Y = microbial[, 1:200]
-
-load("sim_counts_all.RDATA")
-load("sim_counts_all_2.RDATA")
 
 load(file.path("gllvm_models", "gllvm1_summary.RDATA"))
 load(file.path("gllvm_models", "gllvm2_summary.RDATA"))
@@ -963,7 +959,7 @@ for (i in 1:B) {
       
       if (method == "gllvm") {
         u = fit$lvs
-        lambda = fit$params$theta
+        lambda = fit$params$theta %*% diag(fit$params$sigma.lv, nrow = lv, ncol = lv)
       } else {
         u = fit$u
         lambda = fit$lambda
@@ -976,9 +972,6 @@ for (i in 1:B) {
   }
 }
 
-library(dplyr)
-library(ggplot2)
-
 df = df %>% mutate(
   f1 = c(f_all$gllvm1, f_all$glm1, f_all$jmle_ncolcounts1, f_all$jmle_ncolu1, f_all$jmle_sqrt1, f_all$glmnet_pen1_1, f_all$glmnet_pen0.1_1, f_all$glmnet_pen0.01_1),
   f2 = c(f_all$gllvm2, f_all$glm2, f_all$jmle_ncolcounts2, f_all$jmle_ncolu2, f_all$jmle_sqrt2, f_all$glmnet_pen1_2, f_all$glmnet_pen0.1_2, f_all$glmnet_pen0.01_2)
@@ -990,8 +983,17 @@ sim_plot = function(y, ylab, title, ylim = NULL){
   ggtitle(title) + 
   guides(color = FALSE) +
   geom_boxplot(lwd = 0.5, fill = NA) +
-  coord_cartesian(ylim = ylim) +
-  scale_y_continuous(n.breaks = 10) + 
+  scale_y_continuous(n.breaks = 10, limits = ylim) +
+  scale_color_manual(values = c(
+    "gllvm" = "#000000",
+    "alt_glm" = "#E69F00",
+    "jmle_ncolcounts" = "#0072B2",
+    "jmle_ncolu" = "#0072B2",
+    "jmle_sqrt" = "#0072B2",
+    "alt_glmnet_pen1" = "#CC79A7",
+    "alt_glmnet_pen0.1" = "#CC79A7",
+    "alt_glmnet_pen0.01" = "#CC79A7"
+    )) +
   scale_x_discrete(labels = c(
     "gllvm" = "gllvm",
     "alt_glm" = "alt_glm",
@@ -1010,8 +1012,17 @@ sim_log_plot = function(y, ylab, title, ylim = NULL){
   ggtitle(title) + 
   guides(color = FALSE) +
   geom_boxplot(lwd = 0.5, fill = NA) +
-  coord_cartesian(ylim = ylim) +
-  scale_y_continuous(trans = "log", labels = scales::label_number(accuracy = 1)) + 
+  scale_y_continuous(limits = ylim, trans = "log", labels = scales::label_number(accuracy = 1)) + 
+  scale_color_manual(values = c(
+    "gllvm" = "#000000",
+    "alt_glm" = "#E69F00",
+    "jmle_ncolcounts" = "#0072B2",
+    "jmle_ncolu" = "#0072B2",
+    "jmle_sqrt" = "#0072B2",
+    "alt_glmnet_pen1" = "#CC79A7",
+    "alt_glmnet_pen0.1" = "#CC79A7",
+    "alt_glmnet_pen0.01" = "#CC79A7"
+    )) +    
   scale_x_discrete(labels = c(
     "gllvm" = "gllvm",
     "alt_glm" = "alt_glm",
@@ -1024,29 +1035,29 @@ sim_log_plot = function(y, ylab, title, ylim = NULL){
   theme_bw()
 }
 
-g = sim_plot(y = KL1, ylab = "KL Divergence (1 l.v.)", title = "KL Divergence for 1 latent variable", ylim = c(300, 1000))
+g = sim_plot(y = KL1, ylab = "KL Divergence (1 l.v.)", title = "KL Divergence for 1 latent variable", ylim = c(300, 700))
 print(g)
-ggsave("figures/sim-KLD1.png", width = 4, height = 6)
+ggsave("figures/sim-KLD1.png", width = 5.5, height = 4.5)
 
-g = sim_log_plot(y = time1, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 1 latent variable (s)")#, ylim = c(0, 40))
+g = sim_plot(y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(400, 1000))
 g
-ggsave("figures/sim-time1.png", width = 4, height = 6)
+ggsave("figures/sim-KLD2.png", width = 5.5, height = 4.5)
 
-g = sim_plot(y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(300, 1000))
+g = sim_log_plot(y = time1, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 1 latent variable (s)")
 g
-ggsave("figures/sim-KLD2.png", width = 4, height = 6)
+ggsave("figures/sim-time1.png", width = 5.5, height = 4.5)
 
 g = sim_log_plot(y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
 g
-ggsave("figures/sim-time2.png", width = 4, height = 6)
+ggsave("figures/sim-time2.png", width = 5.5, height = 4.5)
 
-g = sim_plot(y = f1, ylab = "Frobenius Norm", title = expression(paste("Frobenius Norm of ", Lambda * Lambda^T, "for 1 latent variable")), ylim = c(0, 800))
+g = sim_plot(y = f1, ylab = "Frobenius Norm", title = expression(paste("Frobenius Norm of ", Lambda * Lambda^T, "for 1 latent variable")), ylim = c(0, 400))
 g
-ggsave("figures/sim-f1.png", width = 4, height = 6)
+ggsave("figures/sim-f1.png", width = 5.5, height = 4.5)
 
-g = sim_plot(y = f2, ylab = "Frobenius Norm", title = expression(paste("Frobenius Norm of ", Lambda * Lambda^T, "for 1 latent variable")), ylim = c(0, 800))
+g = sim_plot(y = f2, ylab = "Frobenius Norm", title = expression(paste("Frobenius Norm of ", Lambda * Lambda^T, "for 2 latent variables")), ylim = c(100, 1000))
 g
-ggsave("figures/sim-f2.png", width = 4, height = 6)
+ggsave("figures/sim-f2.png", width = 5.5, height = 4.5)
 
 
 ```
@@ -1069,7 +1080,8 @@ for (m in methods) {
   for (lv in lvs) {
     out_ct_results[[paste0(m, "_", lv)]] = list(
       out_ct_time = outlier_count(df[[paste0("time", lv)]][df$method == m]),
-      out_ct_KL = outlier_count(df[[paste0("KL", lv)]][df$method == m])
+      out_ct_KL = outlier_count(df[[paste0("KL", lv)]][df$method == m]),
+      out_ct_f = outlier_count(df[[paste0("f", lv)]][df$method == m])
     )
   }
 }
@@ -1096,6 +1108,11 @@ o = range(loglik_new_all_glmnet_pen0.01_1, na.rm = TRUE)
 p = range(loglik_new_all_glmnet_pen0.01_2, na.rm = TRUE)
 
 range(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+range(a, b, c, d, e, f, h, i, j, k, l, m, n, o, p)
+range(a, b, c, d, e, f, i, j, k, l, m, n, o, p)
+
+range(a, c, e, i, k, m, o)
+range(b, d, f, j, l, n, p)
 
 which.max(c(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o ,p))
 ```
