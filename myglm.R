@@ -33,7 +33,8 @@ myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps
       break
     } 
     Info = crossprod(X*sqrt(wts*mu))+penVec # does elementwise multiplication, column-by-column
-    beta = beta_old + solve(Info) %*% t(X) %*% (wts*(y-mu))
+    Xmu = crossprod(X,wts*(y-mu))
+    beta = beta_old + solve(Info) %*% t(Xmu)
     beta_old=beta
     ll_old=ll_new
   }
