@@ -90,7 +90,7 @@ load("Z_star.RDATA")
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor)}
 set.seed(0)
-ridgePen=0.1 #penalty strength
+ridgePen=1 #penalty strength
 
 ### standardise X's up here to variance of one ###
 
@@ -113,6 +113,7 @@ X_full = cbind(1, mi, tempann)
 
 # Store species-specific intercepts, slopes and loadings
 beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Zu) + ncol(X_full)) 
+
 # Store factor
 new_u = matrix(NA, nrow = ncol(Z_star), ncol = ncol(u)) #k x 1
 
@@ -174,11 +175,10 @@ time_i = system.time({for (iter in 1:N){
   Zl_joint = cbind(Z_star * lambda_rep[, 1], Z_star * lambda_rep[, 2])
   attr(Zl_joint, "xm") = rep(0, ncol(Zl_joint))
   attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
-
+  
+  # Basis function update for u
   K = ncol(Zl_joint)/2
-
   offset_i = offset + Zl_joint %*% as.vector(u)
-  # Ridge update for u
   for (i in 1:nrow(u)){
     idx = c(i, i + K)
     offset_i = offset_i - Zl_joint[, idx, drop = FALSE] %*% u[i, ] #
@@ -213,12 +213,13 @@ time_i = system.time({for (iter in 1:N){
   if (is.finite(loglik) && abs(loglik_new_mglmnet_individ_row_multi_u - loglik)/ max(1, abs(loglik_new_mglmnet_individ_row_multi_u)) < 1e-6) break
   loglik = loglik_new_mglmnet_individ_row_multi_u}
 })
-save(loglik_new_mglmnet_individ_row_multi_u, file = "loglik_new_mglmnet_individ_row_multi_u.RDATA")
+#save(loglik_new_mglmnet_individ_row_multi_u, file = "loglik_new_mglmnet_individ_row_multi_u.RDATA")
+save(loglik_new_mglmnet_individ_row_multi_u, file = "loglik_new_mglmnet_individ_row_multi_u_pen1.RDATA")
 
 time_mglmnet_individ_row_multi_u = as.numeric(time_i[3])
 time_mglmnet_individ_row_multi_u
-save(time_mglmnet_individ_row_multi_u, file = "time_mglmnet_individ_row_multi_u.RDATA")
-
+#save(time_mglmnet_individ_row_multi_u, file = "time_mglmnet_individ_row_multi_u.RDATA")
+save(time_mglmnet_individ_row_multi_u, file = "time_mglmnet_individ_row_multi_u_pen1.RDATA")
 
 ```
 
@@ -259,7 +260,8 @@ save(m_intensity_map, file = "m_intensity_map.RDATA")
 
 glmnet_m_individ_row_multi_u_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glmnet, Basis Fn Update, 2 l.v.")
 print(glmnet_m_individ_row_multi_u_map)
-save(glmnet_m_individ_row_multi_u_map, file = "glmnet_m_individ_row_multi_u_map.RDATA")
+#save(glmnet_m_individ_row_multi_u_map, file = "glmnet_m_individ_row_multi_u_map.RDATA")
+save(glmnet_m_individ_row_multi_u_map, file = "glmnet_m_individ_row_multi_u_map_pen1.RDATA")
 
 ```
 

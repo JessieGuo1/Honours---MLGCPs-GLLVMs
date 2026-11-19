@@ -87,7 +87,7 @@ load("Z_star.RDATA")
 
 ```{r Fitting - alternating column/row updates (single latent spatial factor)}
 set.seed(0)
-ridgePen=0.1 #penalty strength
+ridgePen=1 #penalty strength
 
 ### standardise X's up here to variance of one ###
 
@@ -206,11 +206,14 @@ time_i = system.time({for (iter in 1:N){
   if (is.finite(loglik) && abs(loglik_new_mglmnet_individ_row - loglik)/ max(1, abs(loglik_new_mglmnet_individ_row)) < 1e-6) break
   loglik = loglik_new_mglmnet_individ_row}
 })
-save(loglik_new_mglmnet_individ_row, file = "loglik_new_mglmnet_individ_row.RDATA")
+#save(loglik_new_mglmnet_individ_row, file = "loglik_new_mglmnet_individ_row.RDATA")
+save(loglik_new_mglmnet_individ_row, file = "loglik_new_mglmnet_individ_row_pen1.RDATA")
 
 time_mglmnet_individ_row = as.numeric(time_i[3])
 time_mglmnet_individ_row
-save(time_mglmnet_individ_row, file = "time_mglmnet_individ_row.RDATA")
+#save(time_mglmnet_individ_row, file = "time_mglmnet_individ_row.RDATA")
+save(time_mglmnet_individ_row, file = "time_mglmnet_individ_row_pen1.RDATA")
+
 ```
 
 
@@ -260,14 +263,14 @@ m_intensity_map = function(grid_pred_lonlat, model_label = "", species_label = "
     tm_dots(size = 0.4, col = "black", shape = 4, col_alpha = 0.8) + #, fill.legend = tm_legend_hide()) + # add the points
     tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
     tm_title(paste(model_label, species_label)) + # manage the layout
-    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
-            labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
+    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326) # add degree symbol
 }  
 save(m_intensity_map, file = "m_intensity_map.RDATA") 
 
 glmnet_m_individ_row_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glmnet, Basis Fn Update, 1 l.v.")
 print(glmnet_m_individ_row_map)
-save(glmnet_m_individ_row_map, file = "glmnet_m_individ_row_map.RDATA")
+#save(glmnet_m_individ_row_map, file = "glmnet_m_individ_row_map.RDATA")
+save(glmnet_m_individ_row_map, file = "glmnet_m_individ_row_pen1_map.RDATA")
 
 ```
 

@@ -97,7 +97,7 @@ Z_row = rbind(Z_pres, Z_quad_rep)
 
 
 
-```{r Fitting - alternating column/row updates (single latent spatial factor R CRASHES DURING SPECIES UPDATE LOOP}
+```{r Fitting - alternating column/row updates}
 set.seed(0)
 #initialise shared latent spatial field coefficients (u), one per basis function
 u = rnorm(ncol(Z_star), 0, 1)

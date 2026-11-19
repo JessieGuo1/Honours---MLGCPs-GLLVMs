@@ -1,5 +1,5 @@
 ---
-title: "lgcp Fitting glms"
+title: "lgcp fitting - glm + glmnet"
 output: html_document
 date: "2026-08-12"
 editor_options: 
@@ -37,7 +37,7 @@ pres <- pres[pres$spid == "nsw19", ]
 
 q <- nrow(quad) # quadrature points
 
-# add in the quadrature for each species (replicates of the supplied background points)
+# add in the quadrature for each species
 dat <- rbind(pres, quad)
 n <- nrow(dat)
 

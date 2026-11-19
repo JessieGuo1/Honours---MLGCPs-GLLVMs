@@ -98,7 +98,7 @@ Z_row = rbind(Z_pres, Z_quad_rep)
 
 
 
-```{r Fitting - alternating column/row updates (single latent spatial factor R CRASHES DURING SPECIES UPDATE LOOP}
+```{r Fitting - alternating column/row updates}
 set.seed(0)
 #initialise shared latent spatial field coefficients (u), one per basis function
 u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(Z_star), 0, 1))
@@ -172,7 +172,7 @@ time_i = system.time({for (iter in 1:N){
       NULL
       }
 
-  glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset), start = start_iter_u, control = glm.control(maxit = max_it))
+  glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = offset, start = start_iter_u, control = glm.control(maxit = max_it))
   
   u <- matrix(coef(glm1), nrow = nrow(u), ncol = ncol(u))
   print(u)

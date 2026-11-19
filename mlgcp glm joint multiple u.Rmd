@@ -62,6 +62,12 @@ load("domain.RDATA")
 domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
 
 gc()
+
+# Rename spid
+dat_rename = dat %>% 
+  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
+
+attach(dat_rename)
 ```
 
 
@@ -93,11 +99,6 @@ set.seed(0)
 #initialise shared latent spatial field coefficients (u), one per basis function
 u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(Z_star), 0, 1))
 
-# Rename spid
-dat_rename = dat %>% 
-  mutate(spid = as.numeric(str_extract(spid, "\\d+")))
-
-attach(dat_rename)
 Zu = Z_star%*%u
 
 chosen_spid = unique(spid)

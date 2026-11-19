@@ -1,12 +1,7 @@
-alt_glm = function(u, data, Z, X, N, max_it, Y, wts, ridgePen, 
+mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts, 
                       basis.function.update = FALSE, 
                       one.quad = FALSE, pres = NULL, quad = NULL, X_pres = NULL, X_quad = NULL, Z_pres = NULL, Z_quad = NULL, red.data = NULL){
-  # Convert species IDs to numeric
-  dat_rename = data %>% 
-    mutate(spid = as.numeric(str_extract(spid, "\\d+")))
-  
-  attach(dat_rename)
-  
+
   # Shared spatial field
   if (one.quad == TRUE) {
     pres_spid = as.numeric(str_extract(pres$spid, "\\d+"))
@@ -22,11 +17,11 @@ alt_glm = function(u, data, Z, X, N, max_it, Y, wts, ridgePen,
   n_species = length(chosen_spid)
   
   # Store species-specific intercepts, slopes and loadings
-  beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Zu) + ncol(X)) 
+  beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(u) + ncol(X)) 
   
   # Row indices for each species
   if (one.quad == TRUE) {
-    rows_by_species = split(seq_len(nrow(pres)), spid)
+    rows_by_species = split(seq_len(nrow(pres)), pres_spid)
     species_idx_pres = match(pres_spid, chosen_spid)
   }
   else {
@@ -104,10 +99,11 @@ alt_glm = function(u, data, Z, X, N, max_it, Y, wts, ridgePen,
 
     if (basis.function.update == TRUE) {
       # Basis function update for u
-      K = ncol(Zl_joint)/2
+      K = nrow(u)
+      D = ncol(u)
       offset_i = offset + Zl_joint %*% as.vector(u)
       for (i in 1:nrow(u)){
-        idx = c(i, i + K)
+        idx = i + (0:(D - 1)) * K
         offset_i = offset_i - Zl_joint[, idx, drop = FALSE] %*% u[i, ] #
         start_iter_u = if (all(is.finite(u[i, ]))) {
           u[i, ]} else {
@@ -151,7 +147,7 @@ alt_glm = function(u, data, Z, X, N, max_it, Y, wts, ridgePen,
     pred_mglm = mu
     
     # Weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
-    loglik_new_mglm = sum(occ * eta - wt * exp(eta))
+    loglik_new_mglm = sum(occ * eta - wts * exp(eta))
     cat("iter", iter, "loglik:", loglik_new_mglm, "\n")
     
     # Stop once relative change in log-likelihood is small

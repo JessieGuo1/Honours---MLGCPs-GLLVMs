@@ -14,8 +14,7 @@ myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps
   p=ncol(X)
   if(length(ridgeParam)!=p & length(ridgeParam)!=1)
   {
-    message("Ridge parameter has the wrong dimensions")
-    break    
+    stop("Ridge parameter has the wrong dimensions")
   }
   if(length(ridgeParam)==p)
     penVec=ridgeParam
@@ -44,8 +43,8 @@ myglm=function(y,X,beta0,offset=0,nIter=50,ridgeParam=0,wts=rep(1,length(y)),eps
     beta_old=beta
     ll_old=ll_new
   }
+  return(list(loglik_new = ll_new, beta = beta))
 }
-
 n=100
 p = 0.2 #sparsity of X
 X=cbind(1,matrix(1:n)/n*rbinom(n,1,p))

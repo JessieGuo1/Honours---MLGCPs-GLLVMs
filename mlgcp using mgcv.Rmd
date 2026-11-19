@@ -23,6 +23,7 @@ library(glmnet)
 library(scampr)
 library(glmmTMB)
 set.seed(0)
+
 #load data
 po = disPo("NSW")
 bg = disBg("NSW")
@@ -248,7 +249,7 @@ for (iter in 1:N){
                       paraPen=penalty_list_u,data=datXj,
                     control=gam.control(maxit=nGlmnetIter),start=u)
 
-    new_u = coef(glmnet1) 
+  new_u = coef(glmnet1) 
 
       
   u = new_u #43 x 1, updated shared spatial field coefficients

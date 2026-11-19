@@ -20,7 +20,7 @@ df_noXenv = microbial %>%  #no X variables
 ```
 
 
-```{r running gllvm 1 l.v.}
+```{r gllvm LA 1 l.v.}
 # Function to fit generating ('true') GLLVM model and obtain fitted conditional mean values
 model_and_pred = function(Y, X, l.v.){
   # Fit Poisson GLLVM using Laplace Approximation
@@ -101,7 +101,7 @@ loglik_new_all_gllvm1
 ```
 
 
-```{r running gllvm 2 l.v.}
+```{r gllvm LA 2 l.v.}
 
 # Generating model with 2 latent variables
 #model_pred_2 = model_and_pred(Y = microbial[, 1:200], X = as.matrix(scale(Xenv[, 1:2])), l.v. = 2) 
@@ -120,7 +120,7 @@ X = scale(Xenv[, 1:2])
 l.v. = 2
 set.seed(0)
 
-for (k in 3:B){
+for (k in 1:B){
   time_i = system.time({
     gllvm_sim_2 = gllvm(y = sim_counts_all_2[ , k, ], X = X, num.lv = l.v., family = poisson(link = 'log'), method = "LA")}) 
   
@@ -145,6 +145,97 @@ KL_all_gllvm2
 loglik_new_all_gllvm2
 ```
 
+```{r gllvm VA 1 l.v.}
+# No. of simulated datasets
+B = 100
+
+load("model_pred.RDATA")
+load("sim_counts_all.RDATA")
+
+# Create folder where fitted gllvms are stored
+dir.create("gllvm_models/VA", recursive = TRUE, showWarnings = TRUE)
+# Storage for simulation results
+time_all_gllvmVA1 = rep(NA, B) #fitting time for each of the simulations
+KL_all_gllvmVA1 = rep(NA, B) #KL divergence between generating conditional means and fitted conditional means
+loglik_new_all_gllvmVA1 = rep(NA, B) #conditional Poisson log-likelihood
+
+# Environmental covariated used in each fitted model
+X = scale(Xenv[, 1:2])
+# No. of l.v.
+l.v. = 1
+set.seed(0)
+
+# Refit gllvm with 1 l.v. to each simulated dataset
+for (k in 1:B){
+  time_i = system.time({
+    gllvm_sim_VA1 = gllvm(y = sim_counts_all[, k, ], X = X, num.lv = l.v., family = poisson(link = 'log'), method = "VA")}) 
+  
+  # Save fitted GLLVM from each simulation 
+  save(gllvm_sim_VA1, file = file.path("gllvm_models/VA", paste0("gllvm_sim_VA1_", k, ".RDATA")))
+
+  # Conditional means from original generating model
+  true_mu = model_pred$pred_counts
+  
+  # Obtain fitted Poisson conditional means from refitted model
+  pred_mu = predict(gllvm_sim_VA1, type = 'response', lv.pred = TRUE) #account for latent variable
+  
+  mu = pred_mu
+  
+  # 'log(mu)'
+  eta = predict(gllvm_sim_VA1, type = 'link', lv.pred = TRUE) 
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+
+  # Store summary quantities
+  time_all_gllvmVA1[k] = as.numeric(time_i[3])
+  KL_all_gllvmVA1[k] = KL
+  loglik_new_all_gllvmVA1[k] = sum(dpois(sim_counts_all[ , k, ], lambda = mu, log = TRUE)) # treats u as fixed parameters 
+}
+
+save(time_all_gllvmVA1, KL_all_gllvmVA1, loglik_new_all_gllvmVA1, file = file.path("gllvm_models/VA", "gllvmVA1_summary.RDATA"))
+load(file.path("gllvm_models/VA", "gllvmVA1_summary.RDATA"))
+time_all_gllvmVA1
+KL_all_gllvmVA1
+loglik_new_all_gllvmVA1
+```
+
+
+```{r gllvm VA 2 l.v.}
+# Generating model with 2 latent variables
+
+load("model_pred_2.RDATA")
+load("sim_counts_all_2.RDATA")
+
+time_all_gllvmVA2 = rep(NA, B)
+KL_all_gllvmVA2 = rep(NA, B)
+loglik_new_all_gllvmVA2 = rep(NA, B)
+X = scale(Xenv[, 1:2])
+l.v. = 2
+set.seed(0)
+
+for (k in 73:73){
+  time_i = system.time({
+    gllvm_sim_VA2 = gllvm(y = sim_counts_all_2[ , k, ], X = X, num.lv = l.v., family = poisson(link = 'log'), method = "VA")}) 
+  
+  save(gllvm_sim_VA2, file = file.path("gllvm_models/VA", paste0("gllvm_sim_VA2_", k, ".RDATA")))
+
+  true_mu = model_pred_2$pred_counts
+  pred_mu = predict(gllvm_sim_VA2, type = 'response', lv.pred = TRUE) #account for latent variable
+  mu = pred_mu
+  eta = predict(gllvm_sim_VA2, type = 'link', lv.pred = TRUE) 
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+  
+  time_all_gllvmVA2[k] = as.numeric(time_i[3])
+  KL_all_gllvmVA2[k] = KL
+  loglik_new_all_gllvmVA2[k] = sum(dpois(sim_counts_all_2[ , k, ], lambda = mu, log = TRUE))
+}
+
+save(time_all_gllvmVA2, KL_all_gllvmVA2, loglik_new_all_gllvmVA2, file = file.path("gllvm_models/VA", "gllvmVA2_summary.RDATA"))
+
+load(file.path("gllvm_models/VA", "gllvmVA2_summary.RDATA"))
+time_all_gllvmVA2
+KL_all_gllvmVA2
+loglik_new_all_gllvmVA2
+```
 
 
 ```{r alternating glms using 1 l.v.}
@@ -884,6 +975,8 @@ B = 100
 
 load(file.path("gllvm_models", "gllvm1_summary.RDATA"))
 load(file.path("gllvm_models", "gllvm2_summary.RDATA"))
+load(file.path("gllvm_models/VA", "gllvmVA1_summary.RDATA"))
+load(file.path("gllvm_models/VA", "gllvmVA2_summary.RDATA"))
 
 load(file.path("glm_models", "glm1_summary.RDATA"))
 load(file.path("glm_models", "glm2_summary.RDATA"))
@@ -903,11 +996,11 @@ load(file.path("glmnet_models/pen0.01", "glmnet_pen0.01_1_summary.RDATA"))
 load(file.path("glmnet_models/pen0.01", "glmnet_pen0.01_2_summary.RDATA"))
 
 df = data.frame(
-  method = factor(rep(c("gllvm", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01"), each = B), levels = c("gllvm", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01")),
-  KL1 = c(KL_all_gllvm1, KL_all_glm1, KL_all_jmle1, KL_all_jmle_ncolu1, KL_all_jmle_sqrt1, KL_all_glmnet1, KL_all_glmnet_pen0.1_1, KL_all_glmnet_pen0.01_1),
-  time1 = c(time_all_gllvm1, time_all_glm1, time_all_jmle1, time_all_jmle_ncolu1, time_all_jmle_sqrt1, time_all_glmnet1, time_all_glmnet_pen0.1_1, time_all_glmnet_pen0.01_1),
-  KL2 = c(KL_all_gllvm2, KL_all_glm2, KL_all_jmle2, KL_all_jmle_ncolu2, KL_all_jmle_sqrt2, KL_all_glmnet2, KL_all_glmnet_pen0.1_2, KL_all_glmnet_pen0.01_2),
-  time2 = c(time_all_gllvm2, time_all_glm2, time_all_jmle2, time_all_jmle_ncolu2, time_all_jmle_sqrt2, time_all_glmnet2, time_all_glmnet_pen0.1_2, time_all_glmnet_pen0.01_2)
+  method = factor(rep(c("gllvm_LA", "gllvm_VA", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01"), each = B), levels = c("gllvm_LA", "gllvm_VA", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01")),
+  KL1 = c(KL_all_gllvm1, KL_all_gllvmVA1, KL_all_glm1, KL_all_jmle1, KL_all_jmle_ncolu1, KL_all_jmle_sqrt1, KL_all_glmnet1, KL_all_glmnet_pen0.1_1, KL_all_glmnet_pen0.01_1),
+  time1 = c(time_all_gllvm1, time_all_gllvmVA1, time_all_glm1, time_all_jmle1, time_all_jmle_ncolu1, time_all_jmle_sqrt1, time_all_glmnet1, time_all_glmnet_pen0.1_1, time_all_glmnet_pen0.01_1),
+  KL2 = c(KL_all_gllvm2, KL_all_gllvmVA2, KL_all_glm2, KL_all_jmle2, KL_all_jmle_ncolu2, KL_all_jmle_sqrt2, KL_all_glmnet2, KL_all_glmnet_pen0.1_2, KL_all_glmnet_pen0.01_2),
+  time2 = c(time_all_gllvm2, time_all_gllvmVA2, time_all_glm2, time_all_jmle2, time_all_jmle_ncolu2, time_all_jmle_sqrt2, time_all_glmnet2, time_all_glmnet_pen0.1_2, time_all_glmnet_pen0.01_2)
 )
 
 load("identify_ulambda.RDATA")
@@ -915,7 +1008,9 @@ load("identify_ulambda.RDATA")
 #Comparison between ||lambda lambda^T||
 
 f_all = list(
-  gllvm1 = rep(NA, B), gllvm2 = rep(NA, B),
+  gllvm_LA1 = rep(NA, B), gllvm_LA2 = rep(NA, B),
+  gllvm_VA1 = rep(NA, B), gllvm_VA2 = rep(NA, B),
+
   glm1 = rep(NA, B), glm2 = rep(NA, B),
 
   jmle_ncolcounts1 = rep(NA, B), jmle_ncolcounts2 = rep(NA, B),
@@ -933,21 +1028,31 @@ load_fit = function(file) {
   }
 
 model_info = list(
-  gllvm = list(path = "gllvm_models", prefix = "gllvm_sim"),
-  glm = list(path = "glm_models", prefix = "glm_sim"),
-  jmle_ncolcounts = list(path = "jmle_models/ncolcounts", prefix = "jmle_sim"),
-  jmle_ncolu = list(path = "jmle_models/ncolu", prefix = "jmle_ncolu_sim"),
-  jmle_sqrt = list(path = "jmle_models/sqrt", prefix = "jmle_sqrt_sim"),
-  glmnet_pen1_ = list(path = "glmnet_models/pen1", prefix = "glmnet_sim"),
-  glmnet_pen0.1_ = list(path = "glmnet_models/pen0.1", prefix = "glmnet_pen0.1_sim"),
-  glmnet_pen0.01_ = list(path = "glmnet_models/pen0.01", prefix = "glmnet_pen0.01_sim")
+  gllvm_LA = list(path = "gllvm_models", 
+                  file = "gllvm_sim_%d_%d.RDATA"),
+  gllvm_VA = list(path = "gllvm_models/VA", 
+                  file = "gllvm_sim_VA%d_%d.RDATA"),
+  glm = list(path = "glm_models", 
+             file = "glm_sim_%d_%d.RDATA"),
+  jmle_ncolcounts = list(path = "jmle_models/ncolcounts", 
+                         file = "jmle_sim_%d_%d.RDATA"),
+  jmle_ncolu = list(path = "jmle_models/ncolu", 
+                    file = "jmle_ncolu_sim_%d_%d.RDATA"),
+  jmle_sqrt = list(path = "jmle_models/sqrt", 
+                   file = "jmle_sqrt_sim_%d_%d.RDATA"),
+  glmnet_pen1 = list(path = "glmnet_models/pen1", 
+                     file = "glmnet_sim_%d_%d.RDATA"),
+  glmnet_pen0.1 = list(path = "glmnet_models/pen0.1", 
+                       file = "glmnet_pen0.1_sim_%d_%d.RDATA"),
+  glmnet_pen0.01 = list(path = "glmnet_models/pen0.01", 
+                        file = "glmnet_pen0.01_sim_%d_%d.RDATA")
 )
 
 for (i in 1:B) {
   for (lv in 1:2) {
     for (method in names(model_info)) {
       model = model_info[[method]]
-      fit = try(load_fit(file.path(model$path, paste0(model$prefix, "_", lv, "_", i, ".RDATA"))), silent = TRUE)
+      fit = try(load_fit(file.path(model$path, sprintf(model$file, lv, i))), silent = TRUE)
       
       if (inherits(fit, "try-error")) {
       cat("No file found for the", i, "th simulation\n")
@@ -957,7 +1062,7 @@ for (i in 1:B) {
       next
       }
       
-      if (method == "gllvm") {
+      if (method %in% c("gllvm_LA", "gllvm_VA")) {
         u = fit$lvs
         lambda = fit$params$theta %*% diag(fit$params$sigma.lv, nrow = lv, ncol = lv)
       } else {
@@ -973,8 +1078,8 @@ for (i in 1:B) {
 }
 
 df = df %>% mutate(
-  f1 = c(f_all$gllvm1, f_all$glm1, f_all$jmle_ncolcounts1, f_all$jmle_ncolu1, f_all$jmle_sqrt1, f_all$glmnet_pen1_1, f_all$glmnet_pen0.1_1, f_all$glmnet_pen0.01_1),
-  f2 = c(f_all$gllvm2, f_all$glm2, f_all$jmle_ncolcounts2, f_all$jmle_ncolu2, f_all$jmle_sqrt2, f_all$glmnet_pen1_2, f_all$glmnet_pen0.1_2, f_all$glmnet_pen0.01_2)
+  f1 = c(f_all$gllvm_LA1, f_all$gllvm_VA1, f_all$glm1, f_all$jmle_ncolcounts1, f_all$jmle_ncolu1, f_all$jmle_sqrt1, f_all$glmnet_pen1_1, f_all$glmnet_pen0.1_1, f_all$glmnet_pen0.01_1),
+  f2 = c(f_all$gllvm_LA2, f_all$gllvm_VA2, f_all$glm2, f_all$jmle_ncolcounts2, f_all$jmle_ncolu2, f_all$jmle_sqrt2, f_all$glmnet_pen1_2, f_all$glmnet_pen0.1_2, f_all$glmnet_pen0.01_2)
 )
   
 sim_plot = function(y, ylab, title, ylim = NULL){
@@ -985,7 +1090,8 @@ sim_plot = function(y, ylab, title, ylim = NULL){
   geom_boxplot(lwd = 0.5, fill = NA) +
   scale_y_continuous(n.breaks = 10, limits = ylim) +
   scale_color_manual(values = c(
-    "gllvm" = "#000000",
+    "gllvm_LA" = "#000000",
+    "gllvm_VA" = "#000000",
     "alt_glm" = "#E69F00",
     "jmle_ncolcounts" = "#0072B2",
     "jmle_ncolu" = "#0072B2",
@@ -995,7 +1101,8 @@ sim_plot = function(y, ylab, title, ylim = NULL){
     "alt_glmnet_pen0.01" = "#CC79A7"
     )) +
   scale_x_discrete(labels = c(
-    "gllvm" = "gllvm",
+    "gllvm_LA" = "gllvm\nLA",
+    "gllvm_VA" = "gllvm\nVA",
     "alt_glm" = "alt_glm",
     "jmle_ncolcounts" = "jmle\nncolcounts",
     "jmle_ncolu" = "jmle\nncolu",
@@ -1014,7 +1121,8 @@ sim_log_plot = function(y, ylab, title, ylim = NULL){
   geom_boxplot(lwd = 0.5, fill = NA) +
   scale_y_continuous(limits = ylim, trans = "log", labels = scales::label_number(accuracy = 1)) + 
   scale_color_manual(values = c(
-    "gllvm" = "#000000",
+    "gllvm_LA" = "#000000",
+    "gllvm_VA" = "#000000",
     "alt_glm" = "#E69F00",
     "jmle_ncolcounts" = "#0072B2",
     "jmle_ncolu" = "#0072B2",
@@ -1024,7 +1132,8 @@ sim_log_plot = function(y, ylab, title, ylim = NULL){
     "alt_glmnet_pen0.01" = "#CC79A7"
     )) +    
   scale_x_discrete(labels = c(
-    "gllvm" = "gllvm",
+    "gllvm_LA" = "gllvm\nLA",
+    "gllvm_VA" = "gllvm\nVA",
     "alt_glm" = "alt_glm",
     "jmle_ncolcounts" = "jmle\nncolcounts",
     "jmle_ncolu" = "jmle\nncolu",
@@ -1037,35 +1146,34 @@ sim_log_plot = function(y, ylab, title, ylim = NULL){
 
 g = sim_plot(y = KL1, ylab = "KL Divergence (1 l.v.)", title = "KL Divergence for 1 latent variable", ylim = c(300, 700))
 print(g)
-ggsave("figures/sim-KLD1.png", width = 5.5, height = 4.5)
+ggsave("figures/sim-KLD1.png", width = 6.5, height = 4.5)
 
 g = sim_plot(y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(400, 1000))
 g
-ggsave("figures/sim-KLD2.png", width = 5.5, height = 4.5)
+ggsave("figures/sim-KLD2.png", width = 6.5, height = 4.5)
 
 g = sim_log_plot(y = time1, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 1 latent variable (s)")
 g
-ggsave("figures/sim-time1.png", width = 5.5, height = 4.5)
+ggsave("figures/sim-time1.png", width = 6.5, height = 4.5)
 
 g = sim_log_plot(y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
 g
-ggsave("figures/sim-time2.png", width = 5.5, height = 4.5)
+ggsave("figures/sim-time2.png", width = 6.5, height = 4.5)
 
 g = sim_plot(y = f1, ylab = "Frobenius Norm", title = expression(paste("Frobenius Norm of ", Lambda * Lambda^T, "for 1 latent variable")), ylim = c(0, 400))
 g
-ggsave("figures/sim-f1.png", width = 5.5, height = 4.5)
+ggsave("figures/sim-f1.png", width = 6.5, height = 4.5)
 
 g = sim_plot(y = f2, ylab = "Frobenius Norm", title = expression(paste("Frobenius Norm of ", Lambda * Lambda^T, "for 2 latent variables")), ylim = c(100, 1000))
 g
-ggsave("figures/sim-f2.png", width = 5.5, height = 4.5)
+ggsave("figures/sim-f2.png", width = 6.5, height = 4.5)
 
 
 ```
 
 
 ```{r Counting Outliers}
-
-methods = c("gllvm", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01")
+methods = c("gllvm_LA", "gllvm_VA", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01")
 lvs = 1:2
 
 out_ct_results = list()
@@ -1090,31 +1198,42 @@ out_ct_results
 
 
 ```{r Range of loglik}
-a = range(loglik_new_all_gllvm1)
-b = range(loglik_new_all_gllvm2)
-c = range(loglik_new_all_glm1)
-d = range(loglik_new_all_glm2, na.rm = TRUE)
-e = range(loglik_new_all_jmle1)
-f = range(loglik_new_all_jmle2, na.rm = TRUE)
-g = range(loglik_new_all_jmle_ncolu1)
-h = range(loglik_new_all_jmle_ncolu2, na.rm = TRUE)
-i = range(loglik_new_all_jmle_sqrt1)
-j = range(loglik_new_all_jmle_sqrt2, na.rm = TRUE)
-k = range(loglik_new_all_glmnet1, na.rm = TRUE)
-l = range(loglik_new_all_glmnet2)
-m = range(loglik_new_all_glmnet_pen0.1_1, na.rm = TRUE)
-n = range(loglik_new_all_glmnet_pen0.1_2, na.rm = TRUE)
-o = range(loglik_new_all_glmnet_pen0.01_1, na.rm = TRUE)
-p = range(loglik_new_all_glmnet_pen0.01_2, na.rm = TRUE)
+loglik_1 = list(
+  gllvm_LA = loglik_new_all_gllvm1,
+  gllvm_VA = loglik_new_all_gllvmVA1,
+  alt_glm = loglik_new_all_glm1,
+  jmle = loglik_new_all_jmle1,
+  jmle_ncolu = loglik_new_all_jmle_ncolu1,
+  jmle_sqrt = loglik_new_all_jmle_sqrt1,
+  glmnet_1 = loglik_new_all_glmnet1,
+  glmnet_01 = loglik_new_all_glmnet_pen0.1_1,
+  glmnet_001 = loglik_new_all_glmnet_pen0.01_1
+)
 
-range(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
-range(a, b, c, d, e, f, h, i, j, k, l, m, n, o, p)
-range(a, b, c, d, e, f, i, j, k, l, m, n, o, p)
+loglik_2 = list(
+  gllvm_LA = loglik_new_all_gllvm2,
+  gllvm_VA = loglik_new_all_gllvmVA2,
+  alt_glm = loglik_new_all_glm2,
+  jmle = loglik_new_all_jmle2,
+  jmle_ncolu = loglik_new_all_jmle_ncolu2,
+  jmle_sqrt = loglik_new_all_jmle_sqrt2,
+  glmnet_1 = loglik_new_all_glmnet2,
+  glmnet_01 = loglik_new_all_glmnet_pen0.1_2,
+  glmnet_001 = loglik_new_all_glmnet_pen0.01_2
+)
 
-range(a, c, e, i, k, m, o)
-range(b, d, f, j, l, n, p)
+range(unlist(c(loglik_1, loglik_2)), na.rm = TRUE)
+range(unlist(c(loglik_1[names(loglik_1) != "jmle_ncolu"], loglik_2[names(loglik_2) != "jmle_ncolu"])), na.rm = TRUE)
 
-which.max(c(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o ,p))
+range(unlist(loglik_1), na.rm = TRUE)
+range(unlist(loglik_1[names(loglik_1) != "jmle_ncolu"]), na.rm = TRUE)
+
+range(unlist(loglik_2), na.rm = TRUE)
+range(unlist(loglik_2[names(loglik_2) != "jmle_ncolu"]), na.rm = TRUE)
+
+max_loglik_1 = sapply(loglik_1, max, na.rm = TRUE)
+max_loglik_2 = sapply(loglik_2, max, na.rm = TRUE)
+names(which.max(c(max_loglik_1, max_loglik_2)))
 ```
 
 
@@ -1128,7 +1247,7 @@ trim_summary = function(x) {
   )
 }
 
-methods = c("gllvm", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01")
+methods = c("gllvm_LA", "gllvm_VA", "alt_glm", "jmle_ncolcounts", "jmle_ncolu", "jmle_sqrt", "alt_glmnet_pen1", "alt_glmnet_pen0.1", "alt_glmnet_pen0.01")
 lvs = 1:2
 
 results = list()
@@ -1152,3 +1271,311 @@ results
 
 ```
 
+
+
+
+```{r running gllvm 2 l.v. LA}
+
+# Generating model with 2 latent variables
+dir.create("presentation/gllvm_models", recursive = TRUE, showWarnings = TRUE)
+
+model_pred_2 = model_and_pred(Y = microbial[, 1:100], X = as.matrix(scale(Xenv[, 1:2])), l.v. = 2) 
+
+sim_counts_all_2 = simulate(model_pred_2$true_model, nsim = B, conditional = TRUE)
+sim_counts_all_2 = array(sim_counts_all_2, dim = c(nRow = 56, nsim = B, nVar = 100))
+
+
+time_all_gllvmLA = rep(NA, B)
+KL_all_gllvmLA = rep(NA, B)
+loglik_new_all_gllvmLA = rep(NA, B)
+X = scale(Xenv[, 1:2])
+l.v. = 2
+set.seed(0)
+
+for (k in 1:B){
+  time_i = system.time({
+    gllvm_sim_LA = gllvm(y = sim_counts_all_2[ , k, ], X = X, num.lv = l.v., family = poisson(link = 'log'), method = "LA")}) 
+  
+  save(gllvm_sim_LA, file = file.path("presentation/gllvm_models", paste0("gllvm_sim_LA_", k, ".RDATA")))
+
+  true_mu = model_pred_2$pred_counts
+  pred_mu = predict(gllvm_sim_LA, type = 'response', lv.pred = TRUE) #account for latent variable
+  mu = pred_mu
+  eta = predict(gllvm_sim_LA, type = 'link', lv.pred = TRUE) 
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+  
+  time_all_gllvmLA[k] = as.numeric(time_i[3])
+  KL_all_gllvmLA[k] = KL
+  loglik_new_all_gllvmLA[k] = sum(dpois(sim_counts_all_2[ , k, ], lambda = mu, log = TRUE))
+}
+
+save(time_all_gllvmLA, KL_all_gllvmLA, loglik_new_all_gllvmLA, file = file.path("presentation/gllvm_models", "gllvm_LA_summary.RDATA"))
+
+load(file.path("presentation/gllvm_models", "gllvm_LA_summary.RDATA"))
+time_all_gllvmLA
+KL_all_gllvmLA
+loglik_new_all_gllvmLA
+```
+
+
+
+```{r running gllvm 2 l.v. VA}
+
+time_all_gllvmVA = rep(NA, B)
+KL_all_gllvmVA = rep(NA, B)
+loglik_new_all_gllvmVA = rep(NA, B)
+X = scale(Xenv[, 1:2])
+l.v. = 2
+set.seed(0)
+
+for (k in 1:B){
+  time_i = system.time({
+    gllvm_sim_VA = gllvm(y = sim_counts_all_2[ , k, ], X = X, num.lv = l.v., family = poisson(link = 'log'), method = "VA")}) 
+  
+  save(gllvm_sim_VA, file = file.path("presentation/gllvm_models", paste0("gllvm_sim_VA_", k, ".RDATA")))
+
+  true_mu = model_pred_2$pred_counts
+  pred_mu = predict(gllvm_sim_VA, type = 'response', lv.pred = TRUE) #account for latent variable
+  mu = pred_mu
+  eta = predict(gllvm_sim_VA, type = 'link', lv.pred = TRUE) 
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+  
+  time_all_gllvmVA[k] = as.numeric(time_i[3])
+  KL_all_gllvmVA[k] = KL
+  loglik_new_all_gllvmVA[k] = sum(dpois(sim_counts_all_2[ , k, ], lambda = mu, log = TRUE))
+}
+
+save(time_all_gllvmVA, KL_all_gllvmVA, loglik_new_all_gllvmVA, file = file.path("presentation/gllvm_models", "gllvm_VA_summary.RDATA"))
+
+load(file.path("presentation/gllvm_models", "gllvm_VA_summary.RDATA"))
+time_all_gllvmVA
+KL_all_gllvmVA
+loglik_new_all_gllvmVA
+```
+
+
+
+```{r alternating glms using 2 l.v.}
+dir.create("presentation/glm_models", recursive = TRUE, showWarnings = TRUE)
+library(MASS)
+set.seed(0)
+
+time_all_glm = rep(NA, B)
+KL_all_glm = rep(NA, B)
+ite_converge_all_glm = rep(NA, B)
+loglik_new_all_glm = rep(NA, B)
+X = scale(Xenv[, 1:2])
+set.seed(0)
+
+for (k in 1:B){
+  glm_sim = try(alt_glm(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 1000), silent = TRUE) 
+  
+  if (inherits(glm_sim, "try-error")) {
+  cat("Simulation", k, "failed:\n",
+      as.character(glm_sim),
+      "\n")
+    ite_converge_all_glm[k] = NA
+    time_all_glm[k] = NA
+    KL_all_glm[k] = NA
+    loglik_new_all_glm[k] = NA
+    
+    next
+    }
+
+  save(glm_sim, file = file.path("presentation/glm_models", paste0("glm_sim_", k, ".RDATA")))
+  
+  true_mu = model_pred_2$pred_counts
+  pred_mu = glm_sim$pred_counts
+  eta = glm_sim$eta
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+  
+  ite_converge_all_glm[k] = glm_sim$ite_converge
+  time_all_glm[k] = glm_sim$time
+  KL_all_glm[k] = KL
+  loglik_new_all_glm[k] = glm_sim$loglik_new
+}
+
+save(time_all_glm, KL_all_glm, ite_converge_all_glm, loglik_new_all_glm, file = file.path("presentation/glm_models", "glm_summary.RDATA"))
+
+load(file.path("presentation/glm_models", "glm_summary.RDATA"))
+time_all_glm
+KL_all_glm
+ite_converge_all_glm
+loglik_new_all_glm
+```
+
+
+
+```{r jmle, 2 l.v., K = sqrt(ncol(sim_counts))}
+dir.create("presentation/jmle_models", recursive = TRUE, showWarnings = TRUE)
+
+library(MASS)
+time_all_jmle_sqrt = rep(NA, B)
+KL_all_jmle_sqrt = rep(NA, B)
+ite_converge_all_jmle_sqrt = rep(NA, B)
+loglik_new_all_jmle_sqrt = rep(NA, B)
+X = scale(Xenv[, 1:2])
+set.seed(0)
+
+for (k in 1:B){
+  jmle_sqrt_sim = try(jmle(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(56, c(0, 0), diag(2)), K = sqrt(ncol(sim_counts_all_2[, 1, ])), N = 1000), silent = TRUE)
+  
+  if (inherits(jmle_sqrt_sim, "try-error")) {
+cat("Simulation", k, "failed:\n",
+    as.character(jmle_sqrt_sim),
+    "\n")
+  ite_converge_all_jmle_sqrt[k] = NA
+  time_all_jmle_sqrt[k] = NA
+  KL_all_jmle_sqrt[k] = NA
+  loglik_new_all_jmle_sqrt[k] = NA
+  
+  next
+  }
+
+  save(jmle_sqrt_sim, file = file.path("presentation/jmle_models", paste0("jmle_sqrt_sim_", k, ".RDATA")))
+
+  true_mu = model_pred_2$pred_counts
+  pred_mu = jmle_sqrt_sim$pred_counts
+  eta = jmle_sqrt_sim$eta
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+  
+  ite_converge_all_jmle_sqrt[k] = jmle_sqrt_sim$ite_converge
+  time_all_jmle_sqrt[k] = jmle_sqrt_sim$time
+  KL_all_jmle_sqrt[k] = KL
+  loglik_new_all_jmle_sqrt[k] = jmle_sqrt_sim$loglik_new
+}  
+
+save(time_all_jmle_sqrt, KL_all_jmle_sqrt, ite_converge_all_jmle_sqrt, loglik_new_all_jmle_sqrt, file = file.path("presentation/jmle_models", "jmle_sqrt_summary.RDATA"))
+load(file.path("presentation/jmle_models", "jmle_sqrt_summary.RDATA"))
+time_all_jmle_sqrt
+KL_all_jmle_sqrt
+ite_converge_all_jmle_sqrt
+loglik_new_all_jmle_sqrt
+```
+
+
+```{r alt_glmnet 2 l.v. - pen_strength = 1}
+time_all_glmnet_pen1 = rep(NA, B)
+KL_all_glmnet_pen1 = rep(NA, B)
+ite_converge_all_glmnet_pen1 = rep(NA, B)
+loglik_new_all_glmnet_pen1 = rep(NA, B)
+X = scale(Xenv[, 1:2])
+set.seed(0)
+
+for (k in 1:B){
+  glmnet_pen1_sim = try(alt_glmnet(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 1000, pen_strength = 1), silent = TRUE)
+  
+  if (inherits(glmnet_pen1_sim, "try-error")) {
+  cat("Simulation", k, "failed:\n",
+      as.character(glmnet_pen1_sim),
+      "\n")
+    ite_converge_all_glmnet_pen1[k] = NA
+    time_all_glmnet_pen1[k] = NA
+    KL_all_glmnet_pen1[k] = NA
+    loglik_new_all_glmnet_pen1[k] = NA
+    
+    next
+  }
+  
+  save(glmnet_pen1_sim, file = file.path("presentation/glmnet_models", paste0("glmnet_pen1_sim_", k, ".RDATA")))
+
+  true_mu = model_pred_2$pred_counts
+  pred_mu = glmnet_pen1_sim$pred_counts
+  eta = glmnet_pen1_sim$eta
+  KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
+
+  ite_converge_all_glmnet_pen1[k] = glmnet_pen1_sim$ite_converge
+  time_all_glmnet_pen1[k] = glmnet_pen1_sim$time
+  KL_all_glmnet_pen1[k] = KL
+  loglik_new_all_glmnet_pen1[k] = glmnet_pen1_sim$loglik_new
+}
+
+save(time_all_glmnet_pen1, KL_all_glmnet_pen1, ite_converge_all_glmnet_pen1, loglik_new_all_glmnet_pen1, file = file.path("presentation/glmnet_models", "glmnet_pen1_summary.RDATA"))
+
+load(file.path("presentation/glmnet_models", "glmnet_pen1_summary.RDATA"))
+time_all_glmnet_pen1
+KL_all_glmnet_pen1
+ite_converge_all_glmnet_pen1
+loglik_new_all_glmnet_pen1
+```
+
+
+
+```{r Plotting}
+library(ggplot2)
+B = 100
+
+load(file.path("presentation/gllvm_models", "gllvm_LA_summary.RDATA"))
+load(file.path("presentation/gllvm_models", "gllvm_VA_summary.RDATA"))
+load(file.path("presentation/glm_models", "glm_summary.RDATA"))
+load(file.path("presentation/jmle_models", "jmle_sqrt_summary.RDATA"))
+load(file.path("presentation/glmnet_models", "glmnet_pen1_summary.RDATA"))
+
+df = data.frame(
+  method = factor(rep(c("LA", "VA", "alt_glm", "jmle", "PQL (AIRWLS)"), each = B), levels = c("LA", "VA", "alt_glm", "jmle", "PQL (AIRWLS)")),
+  KL2 = c(KL_all_gllvmLA, KL_all_gllvmVA, KL_all_glm, KL_all_jmle_sqrt, KL_all_glmnet_pen1),
+  time2 = c(time_all_gllvmLA, time_all_gllvmVA, time_all_glm, time_all_jmle_sqrt, time_all_glmnet_pen1)
+)
+
+sim_plot = function(df, y, ylab, title, ylim = NULL){
+  g = ggplot(data = df, aes(x = method, y = {{y}}, color = method)) + 
+  ylab(ylab) + xlab("") +
+  ggtitle(title) + 
+  guides(color = FALSE) +
+  geom_boxplot(lwd = 0.5, fill = NA) +
+  scale_y_continuous(n.breaks = 10, limits = ylim) +
+  scale_color_manual(values = c(
+    "LA" = "#000000",
+    "VA" = "#E69F00",
+    "alt_glm" = "#0072B2",
+    "jmle" = "#009E73",
+    "PQL (AIRWLS)" = "#CC79A7"
+    )) +
+   theme_bw()
+}
+
+sim_log_plot = function(df, y, ylab, title, ylim = NULL){
+  g = ggplot(data = df, aes(x = method, y = {{y}}, color = method)) + 
+  ylab(ylab) + xlab("") +
+  ggtitle(title) + 
+  guides(color = FALSE) +
+  geom_boxplot(lwd = 0.5, fill = NA) +
+  scale_y_continuous(limits = ylim, trans = "log", labels = scales::label_number(accuracy = 1)) + 
+  scale_color_manual(values = c(
+    "LA" = "#000000",
+    "VA" = "#E69F00",
+    "alt_glm" = "#0072B2",
+    "jmle" = "#009E73",
+    "PQL (AIRWLS)" = "#CC79A7"
+    )) +
+  theme_bw()
+}
+
+g = sim_plot(df %>% dplyr::filter(method %in% c("LA", "VA")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables")#, ylim = c(400, 1000))
+g
+ggsave("presentation/figures/sim-LA-VA-KLD.png", width = 5.5, height = 4.5)
+
+g = sim_log_plot(df %>% dplyr::filter(method %in% c("LA", "VA")), y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
+g
+ggsave("presentation/figures/sim-LA-VA-time.png", width = 5.5, height = 4.5)
+
+
+g = sim_plot(df %>% dplyr::filter(method %in% c("VA", "PQL (AIRWLS)")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables")#, ylim = c(400, 1000))
+g
+ggsave("presentation/figures/sim-VA-PQL-KLD.png", width = 5.5, height = 4.5)
+
+g = sim_log_plot(df %>% dplyr::filter(method %in% c("VA", "PQL (AIRWLS)")), y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
+g
+ggsave("presentation/figures/sim-VA-PQL-time.png", width = 5.5, height = 4.5)
+
+
+g = sim_plot(df %>% dplyr::filter(method %in% c("PQL (AIRWLS)", "jmle")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables")#, ylim = c(400, 1000))
+g
+ggsave("presentation/figures/sim-PQL-jmle-KLD.png", width = 5.5, height = 4.5)
+
+g = sim_log_plot(df %>% dplyr::filter(method %in% c("PQL (AIRWLS)", "jmle")), y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
+g
+ggsave("presentation/figures/sim-PQL-jmle-time.png", width = 5.5, height = 4.5)
+
+
+```

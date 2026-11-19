@@ -1,5 +1,5 @@
 ---
-title: "LGCP Fitting"
+title: "lgcp fitting - gam + scampr"
 output:
   pdf_document: default
   html_document: default
@@ -45,7 +45,7 @@ pres <- pres[pres$spid == "nsw19", ]
 
 q <- nrow(quad) # quadrature points
 
-# add in the quadrature for each species (replicates of the supplied background points)
+# add in the quadrature for each species 
 dat <- rbind(pres, quad)
 n <- nrow(dat)
 
@@ -83,8 +83,8 @@ objective_fn = function(rho) {
 }
 
 load("opt.RDATA")
-opt <- optimize(objective_fn, interval = range_interval)
-save(opt, file = "opt.RDATA")
+#opt <- optimize(objective_fn, interval = range_interval)
+#save(opt, file = "opt.RDATA")
 
 #log-Gaussian Cox process
 f2 <- update(f1, ~. +  s(x, y, bs = "gp", k = 5, m = c(3, opt$minimum)))
@@ -114,11 +114,12 @@ intensity_map = function(grid_pred_lonlat, title = ""){
     tm_polygons() + # add border
     tm_shape(grid_pred_lonlat) + # create tmap object for points to overlay
     tm_raster(col = "log_intensity",
-                col.scale = tm_scale_continuous(
-                  values = "turbo",
-                  limits = c(-13, -4),
-                  outliers.trunc = c(TRUE, TRUE)),
-                col.legend = tm_legend(title = "Log fitted intensity")) +
+              col.scale = tm_scale_continuous(
+              values = "turbo",
+              limits = c(-13, -4),
+              outliers.trunc = c(TRUE, TRUE)),
+              col.legend = tm_legend(title = "Log fitted intensity",
+                                     reverse = TRUE)) +
     tm_shape(species_points_lonlat) +
     tm_dots(size = 0.4, col = "black", shape = 4, col_alpha = 0.8) + #, fill.legend = tm_legend_hide()) + # add the points
     tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
@@ -149,10 +150,10 @@ m.ipp <- scampr(occ ~ mi + tempann,
                 include.sre	= FALSE)
 
 # can fit increasingly dense, regular grids of basis functions
-bf.search.res <- basis.search(m.ipp, # base model, usually an IPP
-                              max.basis.functions = 300, # stopping point to configurations to trial
-                              which.approx = "variational", return.model = FALSE) # LGCP model type: variational or Laplace (the latter longer to compute)
-save(bf.search.res, file = "bf.search.res.RDATA")
+#bf.search.res <- basis.search(m.ipp, # base model, usually an IPP
+#                              max.basis.functions = 300, # stopping point to configurations to trial
+#                              which.approx = "variational", return.model = FALSE) # LGCP model type: variational or Laplace (the latter longer to compute)
+#save(bf.search.res, file = "bf.search.res.RDATA")
 load("bf.search.res.RDATA")
 
 # use basis configuration that achieves maximum fitted likelihood

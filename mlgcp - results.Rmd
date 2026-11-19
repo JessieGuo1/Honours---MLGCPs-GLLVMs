@@ -76,6 +76,37 @@ map_multivariate_glmnet_2 = tmap_arrange(
 )
 tmap_save(map_multivariate_glmnet_2, "figures/map_multivariate_glmnet_2.png", width = 16, height = 4, dpi = 300)
 
+########################################################################
+map_multivariate_red_1 = tmap_arrange(
+  glm_m_map,
+  glmnet_m_map,
+  mlgcp_map,
+  nrow = 1
+)
+tmap_save(map_multivariate_red_1, "figures/map_multivariate_red_1.png", width = 16, height = 4, dpi = 300)
+
+map_multivariate_red_2 = tmap_arrange(
+  glm_m_multi_u_map,
+  glmnet_m_multi_u_map,
+  mlgcp_map_multi_u,
+  nrow = 1
+)
+tmap_save(map_multivariate_red_2, "figures/map_multivariate_red_2.png", width = 16, height = 4, dpi = 300)
+#######################################################################
+#Penalty 1 glmnet
+
+map_multivariate_glmnet_pen1 = tmap_arrange(
+  glmnet_m_map,
+  glmnet_m_oneq_map,
+  glmnet_m_individ_row_map,
+  glmnet_m_multi_u_map,
+  glmnet_m_oneq_multi_u_map,
+  glmnet_m_individ_row_multi_u_map,
+  nrow = 2
+)
+tmap_save(map_multivariate_glmnet_pen1, "figures/map_multivariate_glmnet_pen1.png", width = 16, height = 8, dpi = 300)
+
+
 
 load("time_mglm.RDATA")
 load("time_mglm_oneq.RDATA")
@@ -158,11 +189,30 @@ cat(
   "mlgcp_multi_u:", loglik_new_mlgcp_multi_u, "\n"
 )
 
+##################################################################################
+#Penalty 1 glmnet
+load("loglik_new_mglmnet.RDATA")
+load("loglik_new_mglmnet_oneq.RDATA")
+load("loglik_new_mglmnet_individ_row.RDATA")
+load("time_mglmnet_multi_u.RDATA")
+load("time_mglmnet_oneq_multi_u.RDATA")
+load("time_mglmnet_individ_row_multi_u.RDATA")
+c(time_mglmnet, time_mglmnet_oneq, time_mglmnet_individ_row, time_mglmnet_multi_u, time_mglmnet_oneq_multi_u, time_mglmnet_individ_row_multi_u)
+
+load("loglik_new_mglmnet.RDATA")
+load("loglik_new_mglmnet_oneq.RDATA")
+load("loglik_new_mglmnet_individ_row.RDATA")
+load("loglik_new_mglmnet_multi_u.RDATA")
+load("loglik_new_mglmnet_oneq_multi_u.RDATA")
+load("loglik_new_mglmnet_individ_row_multi_u.RDATA")
+c(loglik_new_mglmnet, loglik_new_mglmnet_oneq, loglik_new_mglmnet_individ_row, loglik_new_mglmnet_multi_u, loglik_new_mglmnet_oneq_multi_u, loglik_new_mglmnet_individ_row_multi_u)
+
+
 
 ```
 
 
-```{r}
+```{r biplotting}
 # set up the color guide scheme #
 
 # set up a matrix to rotate the coordinates
@@ -179,12 +229,12 @@ for (i in 1:nrow(domain)) {
 }
 
 
-png(filename = "figures/nsw_biplot.png")
+png(filename = "figures/domain_color_guide.png", width = 6 , height = 8, units = "in", res = 300)
 plot(vec2im(domain$xycol, domain$x, domain$y), valuesAreColors = T, box = F, main = "")
-mtext("A: Biplot with Domain Color Guide", side = 3, line = 0.5, adj = 0, xpd = T)
+mtext("Biplot with Domain Color Guide", side = 3, line = 1.5, adj = 0, xpd = T, cex = 1.2)
 par(xpd = T)
 points(mB2$basis.functions$x, mB2$basis.functions$y, bg = mB2$basis.functions$xycol, pch = 21, cex = 1.2)
-legend(x = 0.1, y = -0.1, legend = c("Basis function nodes", "Tree Locations"), pch = c(1, 4), bty = "n", xpd = T)
+legend("bottomright", legend = c("Basis function nodes"), pch = 1, bty = "n", xpd = T)
 dev.off()
 
 

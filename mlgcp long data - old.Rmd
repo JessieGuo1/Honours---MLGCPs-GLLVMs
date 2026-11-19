@@ -1,0 +1,143 @@
+---
+title: "mlgcp long data"
+output: html_document
+date: "2026-09-10"
+---
+
+```{r}
+po_lonlat = st_as_sf(po, coords = c("x", "y"), crs = 4326, remove = FALSE) #convert to sf object, remove = FALSE keeps x, y
+target_crs = 3577 # Australian Albers, coordinates in metres
+po_proj = st_transform(po_lonlat, crs = target_crs) 
+coords_po = st_coordinates(po_proj) #retrieve coordinates in matrix form
+
+po_model = st_drop_geometry(po_proj)
+po_model$x = coords_po[, "X"]/1000 # kilometres
+po_model$y = coords_po[, "Y"]/1000
+
+po_keep = complete.cases(po_model[, covar_names])
+po_lonlat = po_lonlat[po_keep, ]
+
+domain_area_km2 <- as.numeric(set_units(sum(st_area(border_proj)), km^2))
+
+quad_wt <- domain_area_km2 / nrow(bg_model) #quadrature weights
+```
+
+```{r}
+#processed dataframes
+presence_df = data.frame(
+  spid = po_model$spid, 
+  x = po_model$x, y = po_model$y,
+  po_model[, covar_names],
+  presence = 1, 
+  quad.size = 0) #quadrature weights not used at the point events
+
+quad = data.frame(
+  x = bg_model$x, y = bg_model$y,
+  bg_model[, covar_names],
+  presence = 0,
+  quad.size = quad_wt)
+
+species = unique(po_model$spid)
+m = length(species)
+q <- nrow(quad) # quadrature points
+
+# add in the quadrature for each species (replicates of the supplied background points)
+quad <- quad[rep(seq_len(q), m), ]
+quad$spid <- rep(species, each = q) # assign the species id's
+dat <- rbind(presence_df, quad)
+n <- nrow(dat)
+```
+
+
+```{r}
+dat$vegsys <- factor(dat$vegsys)
+dat$pt = dat$presence
+dat$wt = ifelse(dat$presence == 1, 1e-6, dat$quad.size)
+
+#scale
+dat_scaled = scale(dat[, cont_vars])
+centers = attr(dat_scaled, "scaled:center")
+scales  = attr(dat_scaled, "scaled:scale")
+dat[, cont_vars] = as.data.frame(dat_scaled) 
+
+bg_covariates_raw = bg_model[, cont_vars, drop = FALSE] # preserves dimensions - dataframe/matrix
+
+######################
+domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL;  domain$ym <- NULL
+######################
+library(glmmTMB)
+# set the basis functions
+basis.dim = 7
+bfs <- make_basis(k = basis.dim, domain, from.package = "scampr")
+Z = as.matrix(bfs) #n x k
+
+nonzero_cols = colSums(Z != 0, na.rm = TRUE) > 0
+Z_star = Z[, nonzero_cols, drop = FALSE] #n x k_new
+
+border_proj_km = st_geometry(border_proj)/1000
+  
+grid_cells = st_make_grid(border_proj_km, cellsize = 10, square = TRUE)
+inside = lengths(st_intersects(grid_cells, border_proj_km)) > 0 # st_intersects for partial overlap at border
+grid_cells <- grid_cells[inside]
+
+length(grid_cells)   # number of square "basis functions"
+plot(grid_cells)
+
+#dat_X = subset(dat, select = -c(x, y, presence, quad.size, pt, wt))
+```
+```{r}
+Xenv = cbind(dat$tempann, dat$rainann, dat$rugged)
+Xenv[1:6, ]
+
+pts_sf = st_as_sf(dat, coords = c("x", "y"), crs = st_crs(grid_cells), remove = FALSE) #keep original x/y columns
+cell_match = st_within(pts_sf, grid_cells) # find which grid cell each point falls into
+dat$cell_id = sapply(cell_match, function(x) if (length(x) == 0) NA else x[1])
+Xenv_u_df = dat %>% 
+  rownames_to_column(var = "site") %>% 
+  select(site, Xenv.SOM:Xenv.Soiltype) %>% 
+  mutate(u = rnorm(nrow(microbial), 0, 1) # simulating for 1 latent variable
+)
+
+```
+
+
+```{r}
+u = rnorm(length(grid_cells), 0, 1) #k_new x 1, no. of sites/squares 
+beta_lambda = matrix(NA,  nrow = nrow(dat_X), ncol = ) #dependent on code below
+
+for (i in 1:ncol(po)){ #full presence dataset containing all species 
+      glmnet1 = glmnet(y = dat$pt/dat$wt, x = cbind(dat$tempann, dat$rainann, dat$rugged, Z_star, u), intercept = TRUE, family = poisson(link = 'log'), weights = dat$wt, alpha = 0, lambda = 1)#, penalty.factor = penalty_factor)
+      
+      beta_lambda[i, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
+}
+    beta_lambda #(intercept beta lambda)
+    beta = beta_lambda[, 1:4] 
+    lambda = beta_lambda[, ] #remaining columns of beta_lambda
+    
+    X = cbind(1, dat$tempann, dat$rainann, dat$rugged) 
+    new_u = matrix(NA, nrow = nrow(po), ncol = 1) 
+  
+for (i in 1:nrow(po)){
+      glmnet1 = glmnet(x = cbind(Z_star, lambda), y = as.numeric(po), intercept = FALSE, family=poisson(link='log'), offset = (X%*%t(beta))[i, ], alpha = 0, lambda = 1). #split Z_star
+      new_u[i] = glmnet1$coefficients
+    }
+    u = new_u #56 x 1
+    u
+    eta = new_Xenv%*%t(beta) + u%*%t(lambda) #56 x 200 + 56 x 200
+    mu = exp(eta)
+    
+    
+
+coefs = coefficients(glm1_reg)
+n = length(coefs)
+beta = coefs[1:(n - ncol(Z))]
+u = coefs[(n - ncol(Z) + 1):n]
+
+
+#predict the fitted intensity at every grid cell
+X_grid = model.matrix( ~tempann + rainann + rugged, data = grid_xy)
+grid_xy$z = exp(drop(X_grid%*%beta))
+
+
+```
+

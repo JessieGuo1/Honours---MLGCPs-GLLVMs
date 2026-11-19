@@ -1,4 +1,4 @@
-alt_glmnet = function(u, data, Z, X, N, max_it, Y, wts, ridgePen, 
+mlgcp_alt_glmnet = function(u, data, Z, X, N, max_it, Y, wts, ridgePen, 
                       basis.function.update = FALSE, 
                       one.quad = FALSE, pres = NULL, quad = NULL, X_pres = NULL, X_quad = NULL, Z_pres = NULL, Z_quad = NULL, red.data = NULL){
   # Convert species IDs to numeric

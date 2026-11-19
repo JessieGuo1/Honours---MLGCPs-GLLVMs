@@ -1,0 +1,174 @@
+---
+title: "mvlgcp_lansing_woods"
+output: html_document
+date: "2026-09-05"
+---
+
+```{r}
+# Get the job array
+load("job_array.RDATA")
+
+# determine job number from pbs script
+job = 1
+
+## MODEL SETTINGS ##############################################################
+
+# set the number of latent factor we want to use
+d = 2
+# set approximate number of basis function nodes to use
+basis.dim = 50
+# get the predictor set to be modelled
+# pred_set <- as.character(tab$p[tab$job == job])
+# get the basis function type to be used
+# bf.type <- as.character(tab$bf.type[tab$job == job])
+################################################################################
+
+library(glmmTMB)
+library(spatstat)
+# get the data
+data(lansing)
+pres = as.data.frame(lansing)
+plot(lansing)
+summary(lansing)
+plot(split(lansing))
+```
+
+```{r}
+# get the species
+species <- unique(pres$marks)
+
+# set the quadrature weights
+pres$wt <- 1e-6
+quad = default.dummy(lansing)
+quad = as.data.frame(quad)
+plot(lansing$window)
+points(quad)
+region_size = area(lansing$window)
+quad$wt <- region_size / nrow(quad)
+quad$occ = 0 
+
+# assign some numbers
+m <- length(species) # responses
+q <- nrow(quad) # quadrature points
+
+# add in the quadrature for each species (replicates of the supplied background points)
+tmp <- quad[rep(seq_len(q), m), ]
+tmp$spid <- rep(species, each = q) # assign the species id's
+
+tmp = tmp %>% relocate(occ, .after = spid)
+
+pres = pres %>% rename(spid = marks) %>% 
+  relocate(spid, .after = wt) %>% 
+  mutate(occ = 1)
+
+dat <- rbind(pres, tmp)
+n <- nrow(dat)
+rm(tmp)
+```
+
+
+```{r}
+# set the coordinates to x and y so we can just use default labels
+win = lansing$window
+
+grid_pts = gridcentres(win, nx = 300, ny = 300)
+inside = inside.owin(grid_pts$x, grid_pts$y, win)
+
+domain = data.frame(x = grid_pts$x[inside], 
+                   y = grid_pts$y[inside])
+
+nrow(domain)
+domain$lon <- domain$x; domain$lat <- domain$y;
+
+```
+
+
+```{r}
+# set the basis functions
+
+bfs <- make_basis(k = basis.dim, domain, from.package = "scampr")
+
+# need to prune in the case of scampr bfs
+if (is(bfs, "scampr.bf")) {
+  tmp <- bf_matrix(bfs, rbind(pres[,c("x", "y")], quad[,c("x", "y")])) # via the data?
+  # tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
+  bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
+  bfs <- bfs[bf.check != 0, ]
+  rm(tmp, bf.check)
+}
+rm(pres, quad)
+gc()
+
+################################################################################
+# Fit an intercepts-only model #################################################
+################################################################################
+
+# need a function to strip environments from the model objects so they can be saved without being massive
+rm.env <- function(m) {
+  attr(attr(m$frame, "terms"), ".Environment") <- NULL
+  attr(m$modelInfo$terms$cond$fixed, ".Environment") <- NULL
+  attr(m$modelInfo$reTrms$cond$terms$fixed, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$combForm, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$formula, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$ziformula, ".Environment") <- NULL
+  attr(m$modelInfo$allForm$dispformula, ".Environment") <- NULL
+  m
+}
+
+# single correlated fields #####################################################
+
+try(assign("mA1", mvlgcp(occ ~ (1|spid), data = dat, weights = dat$wt, basis.functions = bfs, n_factors = d,
+              control = glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)), mv.flds = "correlated")
+))
+
+# save if the model fitted
+if (exists("mA1")) {
+  print("mA1 converged without start parameters (attempt 1)")
+  mA1 <- rm.env(mA1)
+  mA1$start.pars <- "cold"
+  save(mA1, file = paste0(getwd(), "/models/mA1_", job, ".RDATA"))
+}
+
+# for the dual fields correlated and species-specific ##########################
+
+# first try to fit with cold starts for parameters
+try(assign("mA2", mvlgcp(occ ~ (1|spid), data = dat, weights = dat$wt, basis.functions = bfs, response.id = dat$spid, n_factors = d,
+                         control = glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)), mv.flds = "both")
+))
+if (exists("mA2")) {
+  print(paste0("mA2 converged without start parameters (attempt 1)", if(is.na(logLik(mA2))) {" however, the likelihood was NA"} ))
+  mA2$start.pars <- "cold"
+  if (is.na(logLik(mA2))) {
+    rm(mA2)
+  }
+}
+
+# next try with mA1 as starts for parameters
+if (exists("mA1") & !exists("mA2")) {
+  start.pars <- lapply(split(mA1$fit$parfull, names(mA1$fit$parfull)), unname)
+  start.pars$b <- c(start.pars$b, rep(0, nrow(bfs) * m)) # add additional field coefs
+  start.pars$theta <- c(start.pars$theta, rep(-3, m)) # add additional field variances
+  try(assign("mA2", mvlgcp(occ ~ (1|spid), data = dat, weights = dat$wt, basis.functions = bfs, response.id = dat$spid, n_factors = d,
+                control = glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)), mv.flds = "both",
+                start = start.pars)
+  ))
+  rm(start.pars)
+  # check that the model has a log-likelihood
+  if (exists("mA2")) {
+    print(paste0("mA2 fitted with starting parameters from mA1 (attempt 2)", if(is.na(logLik(mA2))) {" however, the likelihood was NA"} ))
+    mA2$start.pars <- "warm"
+    if (is.na(logLik(mA2))) {
+      rm(mA2)
+    }
+  }
+}
+
+# save if the model fitted
+if (exists("mA2")) {
+  mA2 <- rm.env(mA2)
+  save(mA2, file = paste0(getwd(), "/models/mA2_", job, ".RDATA"))
+}
+
+intensity = predict(mA2, type = "response")
+```
+

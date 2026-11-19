@@ -60,7 +60,7 @@ dat_rep = rbind(pres, quad_rep)
 
 # Preserve lon/lat and use model coordinates as x/y
 dat$lon <- dat$x; dat$lat <- dat$y; dat$x <- dat$xm; dat$y <- dat$ym; dat$xm <- NULL; dat$ym <- NULL
-dat_rep$lon <- dat_rep$x; dat_rep$lat <- dat_rep$y; dat_rep$x <- dat_rep$xm; dat_rep$y <- dat$ym; dat_rep$xm <- NULL; dat_rep$ym <- NULL
+dat_rep$lon <- dat_rep$x; dat_rep$lat <- dat_rep$y; dat_rep$x <- dat_rep$xm; dat_rep$y <- dat_rep$ym; dat_rep$xm <- NULL; dat_rep$ym <- NULL
 
 load("domain.RDATA")
 domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
@@ -93,6 +93,7 @@ quad_rows = nrow(pres) + seq_len(nrow(quad))
                  
 Z_pres = Z_star[pres_rows, , drop = FALSE]
 Z_quad = Z_star[quad_rows, , drop = FALSE]
+Z_row = rbind(Z_pres, Z_quad_rep)
 
 n_species = length(species)
 Z_quad_rep = Z_quad[rep(seq_len(nrow(Z_quad)), n_species), , drop = FALSE]
@@ -101,9 +102,9 @@ Z_row = rbind(Z_pres, Z_quad_rep)
 
 
 
-```{r Fitting - alternating column/row updates (single latent spatial factor)}
+```{r Fitting - alternating column/row updates}
 set.seed(0)
-ridgePen=0.1 #penalty strength
+ridgePen=1 #penalty strength
 
 ### standardise X's up here to variance of one ###
 
@@ -163,14 +164,14 @@ time_i = system.time({for (iter in 1:N){
     idx = rows_by_species[[as.character(i)]]
     
     # Species-specific design matrix
-    X_i = as.matrix(rbind(X_pres_Zu[idx, ], X_quad_Zu))
+    X_i = rbind(X_pres_Zu[idx, ], X_quad_Zu)
     # Species-specific responses
     y_i = c(dat$occ[idx]/dat$wt[idx], rep(0, nrow(quad)))
     # Species-specific weights
     w_i = c(dat$wt[idx], quad$wt)
     
     # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
-    glmnet1 = glmnet:::glmnet.fit(y = y_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
+    glmnet1 = glmnet:::glmnet.fit(y = y_i, x = as.matrix(X_i), family = poisson(link = 'log'), weights = w_i, intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
     
     # Store this species' intercept + beta + lambda (1 loading)
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
@@ -224,11 +225,14 @@ time_i = system.time({for (iter in 1:N){
   loglik = loglik_new_mglmnet_oneq_multi_u}
 })
 
-save(loglik_new_mglmnet_oneq_multi_u, file = "loglik_new_mglmnet_oneq_multi_u.RDATA")
+#save(loglik_new_mglmnet_oneq_multi_u, file = "loglik_new_mglmnet_oneq_multi_u.RDATA")
+save(loglik_new_mglmnet_oneq_multi_u, file = "loglik_new_mglmnet_oneq_multi_u_pen1.RDATA")
 
 time_mglmnet_oneq_multi_u = as.numeric(time_i[3])
 time_mglmnet_oneq_multi_u
-save(time_mglmnet_oneq_multi_u, file = "time_mglmnet_oneq_multi_u.RDATA")
+#save(time_mglmnet_oneq_multi_u, file = "time_mglmnet_oneq_multi_u.RDATA")
+save(time_mglmnet_oneq_multi_u, file = "time_mglmnet_oneq_multi_u_pen1.RDATA")
+
 ```
 
 
@@ -268,7 +272,9 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 glmnet_m_oneq_multi_u_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glmnet, One Quad. Dataset, 2 l.v.")
 print(glmnet_m_oneq_multi_u_map)
-save(glmnet_m_oneq_multi_u_map, file = "glmnet_m_oneq_multi_u_map.RDATA")
+#save(glmnet_m_oneq_multi_u_map, file = "glmnet_m_oneq_multi_u_map.RDATA")
+save(glmnet_m_oneq_multi_u_map, file = "glmnet_m_oneq_multi_u_pen1_map.RDATA")
+
 ```
 
 

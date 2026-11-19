@@ -61,7 +61,7 @@ gc()
 set.seed(0)
 # with correlated fields only ##################################################
 time_i = system.time({try(assign("mB1", mvlgcp(occ ~ 0 + spid + spid:mi + spid:tempann,
-                         data = dat, weights = wt, basis.functions = bfs, response.id = spid, n_factors = 1,
+                         data = dat, weights = dat$wt, basis.functions = bfs, response.id = dat$spid, n_factors = 1,
                          control = glmmTMBControl(optCtrl=list(iter.max=1e3,eval.max=1e3)), mv.flds = "correlated")
 ))})
 
@@ -201,4 +201,3 @@ print(mlgcp_map)
 save(mlgcp_map, file = "mlgcp_map.RDATA")
 load("mlgcp_map.RDATA")
 print(mlgcp_map)
-
