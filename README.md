@@ -1,2 +1,2 @@
-# GLLVM-Experiments
-Statistics Honours - Fast Computation Methods in Estimating Generalised Linear Latent Variable Models
+# MVLGCPs-GLLVMs
+Statistics Honours - Factor Analytic Approach to Multivariate Log-Gaussian Cox Processes
