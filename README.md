@@ -1,6 +1,6 @@
-# Fast Computation Methods for GLLVMs
+# Fast Computation Methods for MLGCPS and GLLVMs
 
-Statistics Honours research repository comparing computational methods for fitting **Generalised Linear Latent Variable Models (GLLVMs)** and **Multivariate Log-Gaussian Cox Processes (MLGCPs)**.
+Statistics Honours research repository comparing computational methods for fitting **Multivariate Log-Gaussian Cox Processes (MLGCPs)** and **Generalised Linear Latent Variable Models (GLLVMs)**.
 
 This project evaluates the accuracy and computational cost of standard and alternative estimation procedures using simulated count data and ecological point-process data.
 
@@ -49,7 +49,7 @@ The code uses the `gllvm` package for standard GLLVM fitting, and the saved `.RD
 - Univariate Log-Gaussian Cox Processes
 - Multivariate Log-Gaussian Cox Processes
 - Basis-function approaches
-- Joint and individual latent-variable update schemes
+- Joint and individual latent-variable update schemes - 'basis function updates'
 - Joint and one-quadrature formulations
 
 ## Requirements
@@ -104,7 +104,7 @@ Model fitting can be computationally intensive. Several workflows save intermedi
 
 ## Author
 
-Jessie Guo
+Jessie Guo, David Warton
 
 ## Licence
 
