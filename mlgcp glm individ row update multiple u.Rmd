@@ -183,11 +183,11 @@ time_i = system.time({for (iter in 1:N){
   if (is.finite(loglik) && abs(loglik_new_mglm_individ_row_multi_u - loglik)/ max(1, abs(loglik_new_mglm_individ_row_multi_u)) < 1e-6) break
   loglik = loglik_new_mglm_individ_row_multi_u}
 })
-save(loglik_new_mglm_individ_row_multi_u, file = "loglik_new_mglm_individ_row_multi_u.RDATA")
+save(loglik_new_mglm_individ_row_multi_u, file = "results/loglik_new_mglm_individ_row_multi_u.RDATA")
 
 time_mglm_individ_row_multi_u = as.numeric(time_i[3])
 time_mglm_individ_row_multi_u
-save(time_mglm_individ_row_multi_u, file = "time_mglm_individ_row_multi_u.RDATA")
+save(time_mglm_individ_row_multi_u, file = "results/time_mglm_individ_row_multi_u.RDATA")
 ```
 
 
@@ -219,7 +219,7 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 glm_m_individ_row_multi_u_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glm, Basis Fn Update, 2 l.v.")
 print(glm_m_individ_row_multi_u_map)
-save(glm_m_individ_row_multi_u_map, file = "glm_m_individ_row_multi_u_map.RDATA")
+save(glm_m_individ_row_multi_u_map, file = "results/glm_m_individ_row_multi_u_map.RDATA")
 ```
 
 
@@ -229,5 +229,5 @@ ULambda = identify_ulambda(u, lambda)
 
 U_glm_individ_row = ULambda$U
 Lambda_glm_individ_row = ULambda$Lambda
-save(U_glm_individ_row, Lambda_glm_individ_row, file = "U_Lambda_glm_individ_row.RDATA")
+save(U_glm_individ_row, Lambda_glm_individ_row, file = "results/U_Lambda_glm_individ_row.RDATA")
 ```

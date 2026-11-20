@@ -78,11 +78,11 @@ if (exists("mB2")) {
 pred_mlgcp = predict(mB2, type = "response", re.form = NULL)
 
 loglik_new_mlgcp_multi_u = sum(dat$occ * log(pred_mlgcp) - dat$wt * pred_mlgcp)
-save(loglik_new_mlgcp_multi_u, file = "loglik_new_mlgcp_multi_u.RDATA")
+save(loglik_new_mlgcp_multi_u, file = "results/loglik_new_mlgcp_multi_u.RDATA")
 
 time_mlgcp_multi_u = as.numeric(time_i[3])
 time_mlgcp_multi_u
-save(time_mlgcp_multi_u, file = "time_mlgcp_multi_u.RDATA")
+save(time_mlgcp_multi_u, file = "results/time_mlgcp_multi_u.RDATA")
 
 #Using tmap
 target_species_id <- "nsw19"
@@ -196,7 +196,7 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 mlgcp_map_multi_u = m_intensity_map(grid_pred_lonlat, model_label = "mlgcp, 2 l.v.")
 print(mlgcp_map_multi_u)
-save(mlgcp_map_multi_u, file = "mlgcp_map_multi_u.RDATA")
+save(mlgcp_map_multi_u, file = "results/mlgcp_map_multi_u.RDATA")
 
 
 u = get_bfs_coeff(mB2)
@@ -206,4 +206,4 @@ load("identify_ulambda.RDATA")
 ULambda = identify_ulambda(u, lambda)
 U_mlgcp = ULambda$U
 Lambda_mlgcp = ULambda$Lambda
-save(U_mlgcp, Lambda_mlgcp, file = "U_Lambda_mlgcp.RDATA")
+save(U_mlgcp, Lambda_mlgcp, file = "results/U_Lambda_mlgcp.RDATA")

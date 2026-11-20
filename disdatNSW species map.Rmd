@@ -119,13 +119,24 @@ map_one_species <- tm_shape(border_lonlat, bbox = bbox_wide) +
   tm_borders() +
   tm_shape(species_points_lonlat) +
   tm_dots(size = 0.4, col = "spid", shape = 4, col_alpha = 0.8, col.scale = tm_scale_categorical(values = my_cols), col.legend = tm_legend(title = "Species", title.size = 0.6)) + # add the points
+  tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
+  tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326) + # add the grid
+  tm_xlab("          Longitude (º)", size = 0.6) +
+  tm_ylab("Latitude (º)", size = 0.6)
+tmap_save(map_one_species, "presentation/figures/map_one_species.png", width = 4, height = 4, dpi = 300)
+
+
+map_one_species_quad <- tm_shape(border_lonlat, bbox = bbox_wide) +
+  tm_borders() +
+  tm_shape(species_points_lonlat) +
+  tm_dots(size = 0.4, col = "spid", shape = 4, col_alpha = 0.8, col.scale = tm_scale_categorical(values = my_cols), col.legend = tm_legend(title = "Species", title.size = 0.6)) + # add the points
   tm_shape(quad_points_lonlat) +
   tm_dots(size = 0.05, col = "black", shape = 16, col_alpha = 0.5) + # add the points
   tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
   tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326) + # add the grid
   tm_xlab("          Longitude (º)", size = 0.6) +
   tm_ylab("Latitude (º)", size = 0.6)
-tmap_save(map_one_species, "presentation/figures/map_one_species.png", width = 4, height = 4, dpi = 300)
+tmap_save(map_one_species_quad, "presentation/figures/map_one_species_quad.png", width = 4, height = 4, dpi = 300)
 ```
 
 
@@ -215,7 +226,6 @@ mlgcp_glm_joint = mlgcp_alt_glm(u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(
 
 
 ```{r Intensity map for a chosen species}
-
 X_domain = cbind(1, domain$mi, domain$tempann)
 Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
 
@@ -242,9 +252,9 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 glm_m_multi_u_slides_map19 = m_intensity_map(grid_pred_lonlat, model_label = "Species 19")
 print(glm_m_multi_u_slides_map19)
-save(glm_m_multi_u_slides_map19, file = "glm_m_multi_u_slides_map19.RDATA")
+save(glm_m_multi_u_slides_map19, file = "presentation/glm_m_multi_u_slides_map19.RDATA")
 
-tmap_save(glm_m_multi_u_slides_map19, "figures/glm_m_multi_u_slides_map19.png", width = 4, height = 4, dpi = 300)
+tmap_save(glm_m_multi_u_slides_map19, "presentation/figures/glm_m_multi_u_slides_map19.png", width = 4, height = 4, dpi = 300)
 
 ```
 
@@ -271,9 +281,9 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 glm_m_multi_u_slides_map20 = m_intensity_map(grid_pred_lonlat, model_label = "Species 20")
 print(glm_m_multi_u_slides_map20)
-save(glm_m_multi_u_slides_map20, file = "glm_m_multi_u_slides_map20.RDATA")
+save(glm_m_multi_u_slides_map20, file = "presentation/glm_m_multi_u_slides_map20.RDATA")
 
-tmap_save(glm_m_multi_u_slides_map20, "figures/glm_m_multi_u_slides_map20.png", width = 4, height = 4, dpi = 300)
+tmap_save(glm_m_multi_u_slides_map20, "presentation/figures/glm_m_multi_u_slides_map20.png", width = 4, height = 4, dpi = 300)
 
 ```
 

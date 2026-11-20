@@ -110,10 +110,11 @@ mlgcp_alt_glmnet = function(u, data, Z, X, N, max_it, Y, wts, ridgePen,
     
     if (basis.function.update == TRUE) {
       # Basis function update for u
-      K = ncol(Zl_joint)/2
+      K = nrow(u)
+      D = ncol(u)
       offset_i = offset + Zl_joint %*% as.vector(u)
       for (i in 1:nrow(u)){
-        idx = c(i, i + K)
+        idx = i + (0:(D - 1)) * K
         offset_i = offset_i - Zl_joint[, idx, drop = FALSE] %*% u[i, ] #
         
         glmnet1 = glmnet:::glmnet.fit(x = Zl_joint[, idx, drop = FALSE], y = Y, intercept = FALSE, family=poisson(link='log'), weights = wts, offset = as.numeric(offset_i), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = u[i, ]), control = glmnet.control(mxitnr = max_it)) 

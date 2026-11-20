@@ -1454,67 +1454,69 @@ loglik_new_all_jmle_sqrt
 ```
 
 
-```{r alt_glmnet 2 l.v. - pen_strength = 1}
-time_all_glmnet_pen1 = rep(NA, B)
-KL_all_glmnet_pen1 = rep(NA, B)
-ite_converge_all_glmnet_pen1 = rep(NA, B)
-loglik_new_all_glmnet_pen1 = rep(NA, B)
+```{r alt_glmnet 2 l.v., pen_strength = 0.01}
+time_all_glmnet_pen0.01 = rep(NA, B)
+KL_all_glmnet_pen0.01 = rep(NA, B)
+ite_converge_all_glmnet_pen0.01 = rep(NA, B)
+loglik_new_all_glmnet_pen0.01 = rep(NA, B)
 X = scale(Xenv[, 1:2])
 set.seed(0)
 
 for (k in 1:B){
-  glmnet_pen1_sim = try(alt_glmnet(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 1000, pen_strength = 1), silent = TRUE)
+  glmnet_pen0.01_sim = try(alt_glmnet(sim_counts = sim_counts_all_2[ , k, ], X = X, u = mvrnorm(n = 56, mu = c(0, 0), Sigma = matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2)), N = 1000, pen_strength = 0.01), silent = TRUE)
   
-  if (inherits(glmnet_pen1_sim, "try-error")) {
+  if (inherits(glmnet_pen0.01_sim, "try-error")) {
   cat("Simulation", k, "failed:\n",
-      as.character(glmnet_pen1_sim),
+      as.character(glmnet_pen0.01_sim),
       "\n")
-    ite_converge_all_glmnet_pen1[k] = NA
-    time_all_glmnet_pen1[k] = NA
-    KL_all_glmnet_pen1[k] = NA
-    loglik_new_all_glmnet_pen1[k] = NA
+    ite_converge_all_glmnet_pen0.01[k] = NA
+    time_all_glmnet_pen0.01[k] = NA
+    KL_all_glmnet_pen0.01[k] = NA
+    loglik_new_all_glmnet_pen0.01[k] = NA
     
     next
   }
   
-  save(glmnet_pen1_sim, file = file.path("presentation/glmnet_models", paste0("glmnet_pen1_sim_", k, ".RDATA")))
+  save(glmnet_pen0.01_sim, file = file.path("presentation/glmnet_models", paste0("glmnet_pen0.01_sim_", k, ".RDATA")))
 
   true_mu = model_pred_2$pred_counts
-  pred_mu = glmnet_pen1_sim$pred_counts
-  eta = glmnet_pen1_sim$eta
+  pred_mu = glmnet_pen0.01_sim$pred_counts
+  eta = glmnet_pen0.01_sim$eta
   KL = sum(true_mu*(log(true_mu) - eta) - (true_mu - pred_mu))
 
-  ite_converge_all_glmnet_pen1[k] = glmnet_pen1_sim$ite_converge
-  time_all_glmnet_pen1[k] = glmnet_pen1_sim$time
-  KL_all_glmnet_pen1[k] = KL
-  loglik_new_all_glmnet_pen1[k] = glmnet_pen1_sim$loglik_new
+  ite_converge_all_glmnet_pen0.01[k] = glmnet_pen0.01_sim$ite_converge
+  time_all_glmnet_pen0.01[k] = glmnet_pen0.01_sim$time
+  KL_all_glmnet_pen0.01[k] = KL
+  loglik_new_all_glmnet_pen0.01[k] = glmnet_pen0.01_sim$loglik_new
 }
 
-save(time_all_glmnet_pen1, KL_all_glmnet_pen1, ite_converge_all_glmnet_pen1, loglik_new_all_glmnet_pen1, file = file.path("presentation/glmnet_models", "glmnet_pen1_summary.RDATA"))
+save(time_all_glmnet_pen0.01, KL_all_glmnet_pen0.01, ite_converge_all_glmnet_pen0.01, loglik_new_all_glmnet_pen0.01, file = file.path("presentation/glmnet_models", "glmnet_pen0.01_summary.RDATA"))
 
-load(file.path("presentation/glmnet_models", "glmnet_pen1_summary.RDATA"))
-time_all_glmnet_pen1
-KL_all_glmnet_pen1
-ite_converge_all_glmnet_pen1
-loglik_new_all_glmnet_pen1
+load(file.path("presentation/glmnet_models", "glmnet_pen0.01_summary.RDATA"))
+time_all_glmnet_pen0.01
+KL_all_glmnet_pen0.01
+ite_converge_all_glmnet_pen0.01
+loglik_new_all_glmnet_pen0.01
 ```
 
 
 
-```{r Plotting}
+```{r Plotting for presentation}
+library(ggplot2)
+B = 100
 library(ggplot2)
 B = 100
 
-load(file.path("presentation/gllvm_models", "gllvm_LA_summary.RDATA"))
-load(file.path("presentation/gllvm_models", "gllvm_VA_summary.RDATA"))
-load(file.path("presentation/glm_models", "glm_summary.RDATA"))
-load(file.path("presentation/jmle_models", "jmle_sqrt_summary.RDATA"))
-load(file.path("presentation/glmnet_models", "glmnet_pen1_summary.RDATA"))
+load(file.path("gllvm_models", "gllvm2_summary.RDATA"))
+load(file.path("gllvm_models/VA", "gllvmVA2_summary.RDATA"))
+load(file.path("glm_models", "glm2_summary.RDATA"))
+load(file.path("jmle_models/sqrt", "jmle2_sqrt_summary.RDATA"))
+load(file.path("glmnet_models/pen0.1", "glmnet_pen0.1_2_summary.RDATA"))
 
 df = data.frame(
-  method = factor(rep(c("LA", "VA", "alt_glm", "jmle", "PQL (AIRWLS)"), each = B), levels = c("LA", "VA", "alt_glm", "jmle", "PQL (AIRWLS)")),
-  KL2 = c(KL_all_gllvmLA, KL_all_gllvmVA, KL_all_glm, KL_all_jmle_sqrt, KL_all_glmnet_pen1),
-  time2 = c(time_all_gllvmLA, time_all_gllvmVA, time_all_glm, time_all_jmle_sqrt, time_all_glmnet_pen1)
+  method = factor(rep(c("LA", "VA", "PQL (AIRWLS)", "jmle", "alt_glm"), each = B), levels = c("LA", "VA", "PQL (AIRWLS)", "jmle", "alt_glm")),
+  KL2 = c(KL_all_gllvm2, KL_all_gllvmVA2, KL_all_glmnet_pen0.1_2, KL_all_jmle_sqrt2, KL_all_glm2 ),
+  time2 = c(time_all_gllvm2, time_all_gllvmVA2, time_all_glmnet_pen0.1_2, time_all_jmle_sqrt2, time_all_glm2)
 )
 
 sim_plot = function(df, y, ylab, title, ylim = NULL){
@@ -1527,9 +1529,9 @@ sim_plot = function(df, y, ylab, title, ylim = NULL){
   scale_color_manual(values = c(
     "LA" = "#000000",
     "VA" = "#E69F00",
-    "alt_glm" = "#0072B2",
+    "PQL (AIRWLS)" = "#CC79A7",
     "jmle" = "#009E73",
-    "PQL (AIRWLS)" = "#CC79A7"
+    "alt_glm" = "#0072B2"
     )) +
    theme_bw()
 }
@@ -1544,14 +1546,14 @@ sim_log_plot = function(df, y, ylab, title, ylim = NULL){
   scale_color_manual(values = c(
     "LA" = "#000000",
     "VA" = "#E69F00",
-    "alt_glm" = "#0072B2",
+    "PQL (AIRWLS)" = "#CC79A7",
     "jmle" = "#009E73",
-    "PQL (AIRWLS)" = "#CC79A7"
+    "alt_glm" = "#0072B2"
     )) +
   theme_bw()
 }
 
-g = sim_plot(df %>% dplyr::filter(method %in% c("LA", "VA")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables")#, ylim = c(400, 1000))
+g = sim_plot(df %>% dplyr::filter(method %in% c("LA", "VA")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(400, 1000))
 g
 ggsave("presentation/figures/sim-LA-VA-KLD.png", width = 5.5, height = 4.5)
 
@@ -1560,22 +1562,30 @@ g
 ggsave("presentation/figures/sim-LA-VA-time.png", width = 5.5, height = 4.5)
 
 
-g = sim_plot(df %>% dplyr::filter(method %in% c("VA", "PQL (AIRWLS)")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables")#, ylim = c(400, 1000))
+g = sim_plot(df %>% dplyr::filter(method %in% c("LA", "VA", "PQL (AIRWLS)")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(400, 1000))
 g
-ggsave("presentation/figures/sim-VA-PQL-KLD.png", width = 5.5, height = 4.5)
+ggsave("presentation/figures/sim-LA-VA-PQL-KLD.png", width = 5.5, height = 4.5)
 
-g = sim_log_plot(df %>% dplyr::filter(method %in% c("VA", "PQL (AIRWLS)")), y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
+g = sim_log_plot(df %>% dplyr::filter(method %in% c("LA", "VA", "PQL (AIRWLS)")), y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
 g
-ggsave("presentation/figures/sim-VA-PQL-time.png", width = 5.5, height = 4.5)
+ggsave("presentation/figures/sim-LA-VA-PQL-time.png", width = 5.5, height = 4.5)
 
 
-g = sim_plot(df %>% dplyr::filter(method %in% c("PQL (AIRWLS)", "jmle")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables")#, ylim = c(400, 1000))
+g = sim_plot(df %>% dplyr::filter(method %in% c("LA", "VA", "PQL (AIRWLS)", "jmle")), y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(400, 1000))
 g
-ggsave("presentation/figures/sim-PQL-jmle-KLD.png", width = 5.5, height = 4.5)
+ggsave("presentation/figures/sim-LA-VA-PQL-jmle-KLD.png", width = 5.5, height = 4.5)
 
-g = sim_log_plot(df %>% dplyr::filter(method %in% c("PQL (AIRWLS)", "jmle")), y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
+g = sim_log_plot(df %>% dplyr::filter(method %in% c("LA", "VA", "PQL (AIRWLS)", "jmle")), y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
 g
-ggsave("presentation/figures/sim-PQL-jmle-time.png", width = 5.5, height = 4.5)
+ggsave("presentation/figures/sim-LA-VA-PQL-jmle-time.png", width = 5.5, height = 4.5)
 
+
+g = sim_plot(df, y = KL2, ylab = "KL Divergence (2 l.v.)", title = "KL Divergence for 2 latent variables", ylim = c(400, 1000))
+g
+ggsave("presentation/figures/sim-LA-VA-PQL-jmle-glm-KLD.png", width = 5.5, height = 4.5)
+
+g = sim_log_plot(df, y = time2, ylab = "Computation Time (s) (log-scaled)", title = "Computation time for 2 latent variable (s)")
+g
+ggsave("presentation/figures/sim-LA-VA-PQL-jmle-glm-time.png", width = 5.5, height = 4.5)
 
 ```

@@ -179,11 +179,11 @@ time_i = system.time({for (iter in 1:N){
   if (is.finite(loglik) && abs(loglik_new_mglm_individ_row - loglik)/ max(1, abs(loglik_new_mglm_individ_row)) < 1e-6) break
   loglik = loglik_new_mglm_individ_row}
 })
-save(loglik_new_mglm_individ_row, file = "loglik_new_mglm_individ_row.RDATA")
+save(loglik_new_mglm_individ_row, file = "results/loglik_new_mglm_individ_row.RDATA")
 
 time_mglm_individ_row = as.numeric(time_i[3])
 time_mglm_individ_row
-save(time_mglm_individ_row, file = "time_mglm_individ_row.RDATA")
+save(time_mglm_individ_row, file = "results/time_mglm_individ_row.RDATA")
 ```
 
 
@@ -215,7 +215,7 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 glm_m_individ_row_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glm, Basis Fn Update, 1 l.v.")
 print(glm_m_individ_row_map)
-save(glm_m_individ_row_map, file = "glm_m_individ_row_map.RDATA")
+save(glm_m_individ_row_map, file = "results/glm_m_individ_row_map.RDATA")
 ```
 
 

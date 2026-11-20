@@ -26,6 +26,10 @@ rm(dat_pa)
 
 # get a vector of the factor terms
 facts <- c("disturb", "soilfert", "vegsis")
+
+# load the species information
+load("flora_species.RDATA")
+
 # get the groups to which the flora species belongs to subset the data
 flora_groups <- unique(sp.info$group)
 
@@ -47,7 +51,6 @@ dat$lon <- dat$x; dat$lat <- dat$y; dat$x <- dat$xm; dat$y <- dat$ym; dat$xm <- 
 pres$lon <- pres$x; pres$lat <- pres$y; pres$x <- pres$xm; pres$y <- pres$ym; pres$xm <- NULL; pres$ym <- NULL
 
 load("domain.RDATA")
-#load("flora_species.RDATA")
 domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
 
 gc()
@@ -95,42 +98,42 @@ dat_rename = dat %>%
   mutate(spid = as.numeric(str_extract(spid, "\\d+")))
 
 attach(dat_rename)
-Zu = Z_star%*%u
+#Zu = Z_star%*%u
 X_full = cbind(1, mi, tempann)
-beta_lambda = matrix(NA,  nrow = 1, ncol = ncol(Zu) + ncol(X_full)) 
+beta_u = matrix(NA,  nrow = 1, ncol = ncol(Z_star) + ncol(X_full)) 
 
 N = 1000 
 loglik = -Inf
 max_it = 3
 
 for (iter in 1:N){
-  X_Zu = cbind(X_full, Zu)
+  X_Z = cbind(X_full, Z_star)
  
   if (iter == 1) {
     start_iter = NULL
   } else {
-    start_iter = as.numeric(beta_lambda)
+    start_iter = as.numeric(beta_u)
   }
   
-  glm1 = glm.fit(y = occ/wt, x = X_Zu, intercept = TRUE, family = poisson(link = 'log'), weights = wt, start = start_iter, control = glm.control(maxit = max_it))
+  glm1 = glm.fit(y = occ/wt, x = X_Z, intercept = TRUE, family = poisson(link = 'log'), weights = wt, start = start_iter, control = glm.control(maxit = max_it))
   
   # store this species' intercept + beta + lambda
-  beta_lambda = t(c(glm1$coefficients)) 
+  beta_u = t(c(glm1$coefficients)) 
   
   #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
-  beta_lambda
-  beta = beta_lambda[, 1:ncol(X_full)]
-  lambda = (beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)])
+  beta_u
+  beta = beta_u[, 1:ncol(X_full)]
+  u = (beta_u[, (ncol(X_full) + 1):ncol(beta_u)])
   
   #fixed-effect linear predictor
   offset_matrix = X_full%*%(beta)
   
-  Zl_joint = Z_star*lambda 
+#  Zl_joint = Z_star*lambda 
 #  attr(Zl_joint, "xm") = rep(0, ncol(Zl_joint))
 #  attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
   
   #fit shared u via one joint ridge regression
-  glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset_matrix), start = as.numeric(u), control = glm.control(maxit = max_it))
+  glm1 = glm.fit(x = Z_star, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset_matrix), start = as.numeric(u), control = glm.control(maxit = max_it))
   
   new_u = as.numeric(glm1$coefficients)
     
@@ -140,7 +143,7 @@ for (iter in 1:N){
   # Rebuild Zu with updated u, for next iteration's column update
   Zu = Z_star%*%u
   
-  eta = offset_matrix + rowSums(Zu * lambda)
+  eta = offset_matrix + Zu
   mu = exp(eta)
   pred_glm = mu
   
@@ -152,7 +155,7 @@ for (iter in 1:N){
   if(abs((loglik_new_glm - loglik)/loglik_new_glm) < 1e-6) break
   loglik = loglik_new_glm}
 
-save(loglik_new_glm, file = "loglik_new_glm.RDATA")
+save(loglik_new_glm, file = "results/loglik_new_glm.RDATA")
 ```
 
 
@@ -163,7 +166,7 @@ Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
 
 Zu_domain = Z_domain_star %*% u
 
-domain$log_intensity = as.numeric(X_domain%*%beta + Zu_domain%*%lambda)
+domain$log_intensity = as.numeric(X_domain%*%beta + Zu_domain)
 
 library(stars)
 domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
@@ -177,14 +180,14 @@ border_lonlat = disBorder("NSW")
 tmap_mode("plot")
 
 load("intensity_map.RDATA")
-glm_map = intensity_map(grid_pred_lonlat, title = "alt_glm")
+glm_map = intensity_map(grid_pred_lonlat, title = "glm")
 print(glm_map)
-save(glm_map, file = "glm_map.RDATA")
+save(glm_map, file = "results/glm_map.RDATA")
 ```
 
 
 
-```{r penalised glm with loop to convergence, Zulambda}
+```{r penalised glm with loop to convergence}
 #Fitting penalised glm
 library(glmnet)
 ridgePen=0.1 #penalty strength
@@ -197,37 +200,36 @@ dat_rename = dat %>%
   mutate(spid = as.numeric(str_extract(spid, "\\d+")))
 
 attach(dat_rename)
-Zu = Z_star%*%u
+#Zu = Z_star%*%u
 X_full = cbind(1, mi, tempann) #10426 x 4, fixed-effect design matrix
-X_Zu = cbind(X_full[, -1], Zu)
 
-beta_lambda = matrix(NA,  nrow = 1, ncol = ncol(Zu) + ncol(X_full)) #fitted intercept+beta+lambda per species
+beta_u = matrix(NA,  nrow = 1, ncol = ncol(Z_star) + ncol(X_full)) #fitted intercept+beta+lambda per species
 
 N = 1000 #max no. of outer (column-update + row-update) iterations
 loglik = -Inf
 max_it = 3 #max iterations glmnet allowed
 
-warm_start = if (all(is.finite(beta_lambda))) {
+warm_start = if (all(is.finite(beta_u))) {
   list(a0 = glmnet1$a0, beta = as.numeric(glmnet1$beta))
 } else {
   NULL
 }
-penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Zu))) 
+penalty_factor = c(rep(0, ncol(X_full) - 1), rep(1, ncol(Z_star))) 
 
 for (iter in 1:N){
     #design matrix - covariates + species' rows of spatial term (Zu)
-  X_Zu = cbind(X_full[, -1], Zu)
+  X_Z = cbind(X_full[, -1], Z_star)
     
     #weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
-    glmnet1 = glmnet:::glmnet.fit(y = occ/wt, x = as.matrix(X_Zu), intercept = TRUE, family = poisson(link = 'log'), warm = warm_start, weights = wt, alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
+    glmnet1 = glmnet:::glmnet.fit(y = occ/wt, x = as.matrix(X_Z), intercept = TRUE, family = poisson(link = 'log'), warm = warm_start, weights = wt, alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
     
-    # store this species' intercept + beta (3 covariates) + lambda (1 loading)
-    beta_lambda = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
+    # store this species' intercept + beta (3 covariates)
+    beta_u = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
   
   #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
-  beta_lambda
-  beta = beta_lambda[, 1:ncol(X_full)] #1 x 4
-  lambda = (beta_lambda[, (ncol(X_full) + 1):ncol(beta_lambda)]) #1 x 1
+  beta_u
+  beta = beta_u[, 1:ncol(X_full)] #1 x 4
+  u = (beta_u[, (ncol(X_full) + 1):ncol(beta_u)]) #1 x 1
   
     #row update: fit one shared spatial field (u)
   #elementwise product: each basis function scaled by that row's species' loading
@@ -235,12 +237,12 @@ for (iter in 1:N){
   #fixed-effect linear predictor
   offset_matrix = X_full%*%beta #10426 x 1
     
-  Zl_joint = Z_star * lambda #10426 x 1
-  attr(Zl_joint, "xm") = rep(0, ncol(Zl_joint))
-  attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
+#  Zl_joint = Z_star * lambda #10426 x 1
+#  attr(Zl_joint, "xm") = rep(0, ncol(Zl_joint))
+#  attr(Zl_joint, "xs") = rep(1, ncol(Zl_joint))
   
   #fit shared u via one joint ridge regression
-  glmnet1 = glmnet:::glmnet.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset_matrix), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)), control = glmnet.control(mxitnr = max_it)) 
+  glmnet1 = glmnet:::glmnet.fit(x = Z_star, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = as.numeric(offset_matrix), alpha = 0, lambda = ridgePen, warm = list(a0 = 0, beta = as.numeric(u)), control = glmnet.control(mxitnr = max_it)) 
   
   new_u = as.numeric(glmnet1$beta)
     
@@ -251,7 +253,7 @@ for (iter in 1:N){
   Zu = Z_star%*%u
   
   #convergence check - weighted Poisson-process log-likelihood kernel + Gaussian prior on u --- ##
-  eta = offset_matrix + rowSums(Zu * lambda)
+  eta = offset_matrix + Zu
   mu = exp(eta)
   pred_glmnet = mu
 
@@ -263,7 +265,7 @@ for (iter in 1:N){
   if(abs((loglik_new_glmnet - loglik)/loglik_new_glmnet) < 1e-6) break
   loglik = loglik_new_glmnet}
 
-save(loglik_new_glmnet, file = "loglik_new_glmnet.RDATA")
+save(loglik_new_glmnet, file = "results/loglik_new_glmnet.RDATA")
 ```
 
 
@@ -276,7 +278,7 @@ Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
 
 Zu_domain = Z_domain_star %*% u
 
-domain$log_intensity = as.numeric(X_domain%*%beta + Zu_domain%*%lambda)
+domain$log_intensity = as.numeric(X_domain%*%beta + Zu_domain)
 
 library(stars)
 domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
@@ -290,9 +292,9 @@ border_lonlat = disBorder("NSW")
 tmap_mode("plot")
 
 load("intensity_map.RDATA")
-glmnet_map = intensity_map(grid_pred_lonlat, title = "alt_glmnet")
+glmnet_map = intensity_map(grid_pred_lonlat, title = "glmnet")
 print(glmnet_map)
-save(glmnet_map, file = "glmnet_map.RDATA")
+save(glmnet_map, file = "results/glmnet_map.RDATA")
 ```
 
 
@@ -300,10 +302,10 @@ save(glmnet_map, file = "glmnet_map.RDATA")
 ```{r Comparison}
 tmap_mode("plot")
 
-load("gam_map.RDATA")
-load("scampr_map.RDATA")
-load("glm_map.RDATA")
-load("glmnet_map.RDATA")
+load("results/gam_map.RDATA")
+load("results/scampr_map.RDATA")
+load("results/glm_map.RDATA")
+load("results/glmnet_map.RDATA")
 
 tmap_arrange(
   gam_map,
@@ -314,10 +316,10 @@ tmap_arrange(
 )
 
 
-load("loglik_new_gam.RDATA")
-load("loglik_new_scampr.RDATA")
-load("loglik_new_glm.RDATA")
-load("loglik_new_glmnet.RDATA")
+load("results/loglik_new_gam.RDATA")
+load("results/loglik_new_scampr.RDATA")
+load("results/loglik_new_glm.RDATA")
+load("results/loglik_new_glmnet.RDATA")
 
 c(loglik_new_gam, loglik_new_scampr, loglik_new_glm, loglik_new_glmnet)
 

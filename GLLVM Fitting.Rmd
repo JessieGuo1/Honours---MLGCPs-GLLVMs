@@ -20,43 +20,10 @@ df_noXenv = microbial %>%  #no X variables
 ```
 
 
-```{r running gllvm 1 l.v.}
+```{r running gllvm LA 2 l.v.}
 # Create folder where fitted gllvms are stored
-dir.create("gllvm_models", showWarnings = TRUE)
-dir.create("gllvm_models/fitting", showWarnings = TRUE)
+dir.create("gllvm_models/fitting", recursive = TRUE, showWarnings = TRUE)
 
-# Environmental covariated used in each fitted model
-X = scale(Xenv[, 1:2])
-Y = microbial[, 1:200]
-# No. of l.v.
-l.v. = 1
-set.seed(0)
-
-# Refit gllvm with 1 l.v. to each simulated dataset
-time_i = system.time({
-  gllvm_1 = gllvm(y = Y, X = X, num.lv = l.v., family = poisson(link = 'log'), method = "LA")}) 
-
-# Save fitted GLLVM from each simulation 
-save(gllvm_1, file = file.path("gllvm_models/fitting", "gllvm_1.RDATA"))
-load("gllvm_models/fitting/gllvm_1.RDATA")
-# Obtain fitted Poisson conditional means from refitted model
-pred_mu_gllvm1 = predict(gllvm_1, type = 'response', lv.pred = TRUE) #account for latent variable
-
-mu = pred_mu_gllvm1
-
-# Store summary quantities
-time_gllvm1 = as.numeric(time_i[3])
-loglik_new_gllvm1 = sum(dpois(as.matrix(Y), lambda = mu, log = TRUE)) # treats u as fixed parameters 
-#  loglik_builtin_all_gllvm1[k] = gllvm_sim_1$logL #treats u as latent variables where integral needs to be marginalised over u
-
-save(time_gllvm1, loglik_new_gllvm1, file = file.path("gllvm_models/fitting", "gllvm1_summary.RDATA"))
-load(file.path("gllvm_models/fitting", "gllvm1_summary.RDATA"))
-time_gllvm1
-loglik_new_gllvm1
-```
-
-
-```{r running gllvm 2 l.v.}
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
 l.v. = 2
@@ -82,39 +49,40 @@ loglik_new_gllvm2
 ```
 
 
-
-```{r alternating glms using 1 l.v.}
-# KL divergence should be outside
-# Fit alt_glm to B simulated datasets
-dir.create("glm_models", showWarnings = TRUE)
-dir.create("glm_models/fitting", showWarnings = TRUE)
-
-source("alt_glm.R")
+```{r running gllvm VA 2 l.v.}
+dir.create("gllvm_models/fitting/VA", recursive = TRUE, showWarnings = TRUE)
 
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
+l.v. = 2
 set.seed(0)
 
-glm_1 = alt_glm(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), N = 100)
-  
-save(glm_1, file = file.path("glm_models/fitting", "glm_1.RDATA"))
-load("glm_models/fitting/glm_1.RDATA")
-pred_mu_glm1 = glm_1$pred_counts
 
-time_glm1 = glm_1$time
-loglik_new_glm1 = glm_1$loglik_new
+time_i = system.time({
+  gllvm_VA2 = gllvm(y = Y, X = X, num.lv = l.v., family = poisson(link = 'log'), method = "VA")}) 
 
-save(time_glm1, loglik_new_glm1, file = file.path("glm_models/fitting", "glm1_summary.RDATA"))
+save(gllvm_VA2, file = file.path("gllvm_models/fitting/VA", "gllvm_VA2.RDATA"))
+load("gllvm_models/fitting/VA/gllvm_VA2.RDATA")
+pred_mu_gllvm_VA2 = predict(gllvm_VA2, type = 'response', lv.pred = TRUE) #account for latent variable
+mu = pred_mu_gllvm_VA2
 
-load(file.path("glm_models", "glm1_summary.RDATA"))
-time_glm1
-loglik_new_glm1
+time_gllvm_VA2 = as.numeric(time_i[3])
+loglik_new_gllvm_VA2 = sum(dpois(as.matrix(Y), lambda = mu, log = TRUE))
+
+save(time_gllvm_VA2, loglik_new_gllvm_VA2, file = file.path("gllvm_models/fitting/VA", "gllvm_VA2_summary.RDATA"))
+
+load(file.path("gllvm_models/fitting/VA", "gllvm_VA2_summary.RDATA"))
+time_gllvm_VA2
+loglik_new_gllvm_VA2
 ```
 
 
 ```{r alternating glms using 2 l.v.}
-# look into katana for computation clusters 
+dir.create("glm_models/fitting", recursive = TRUE, showWarnings = TRUE)
+
 library(MASS)
+
+source("alt_glm.R")
 
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
@@ -137,35 +105,15 @@ loglik_new_glm2
 ```
 
 
-```{r jmle, 1 l.v., K = ncol(sim_counts)}
+
+
+```{r jmle, 2 l.v., K = ncol(sim_counts)}
 # Fit jmle to B simulated datasets
-dir.create("jmle_models", showWarnings = TRUE)
-dir.create("jmle_models/fitting/ncolcounts", showWarnings = TRUE)
+dir.create("jmle_models/fitting/ncolcounts", recursive = TRUE, showWarnings = TRUE)
 
 source("jmle.R")
 source("proc.R")
 
-X = scale(Xenv[, 1:2])
-Y = microbial[, 1:200]
-set.seed(0)
-
-jmle_1 = jmle(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), K = ncol(sim_counts), N = 1000)
-
-save(jmle_1, file = file.path("jmle_models/fitting/ncolcounts", "jmle_1.RDATA"))
-load("jmle_models/fitting/ncolcounts/jmle_1.RDATA")
-pred_mu_jmle1 = jmle_1$pred_counts
-
-time_jmle1 = jmle_1$time
-loglik_new_jmle1 = jmle_1$loglik_new
-
-save(time_jmle1, loglik_new_jmle1, file = file.path("jmle_models/fitting/ncolcounts", "jmle1_summary.RDATA"))
-load(file.path("jmle_models/fitting/ncolcounts", "jmle1_summary.RDATA"))
-time_jmle1
-loglik_new_jmle1
-```
-
-
-```{r jmle, 2 l.v., K = ncol(sim_counts)}
 library(MASS)
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
@@ -187,31 +135,11 @@ loglik_new_jmle2
 ```
 
 
-```{r jmle, 1 l.v., K = ncol(u)}
-dir.create("jmle_models/fitting/ncolu", recursive = TRUE, showWarnings = TRUE)
-
-X = scale(Xenv[, 1:2])
-Y = microbial[, 1:200]
-set.seed(0)
-
-jmle_ncolu1 = jmle(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), K = 1, N = 1000)
-
-save(jmle_ncolu1, file = file.path("jmle_models/fitting/ncolu", "jmle_ncolu1.RDATA"))
-load("jmle_models/fitting/ncolu/jmle_ncolu1.RDATA")
-pred_mu_jmle_ncolu1 = jmle_ncolu1$pred_counts
-
-time_jmle_ncolu1 = jmle_ncolu1$time
-loglik_new_jmle_ncolu1 = jmle_ncolu1$loglik_new
-
-save(time_jmle_ncolu1, loglik_new_jmle_ncolu1, file = file.path("jmle_models/fitting/ncolu", "jmle_ncolu1_summary.RDATA"))
-load(file.path("jmle_models/fitting/ncolu", "jmle_ncolu1_summary.RDATA"))
-time_jmle_ncolu1
-loglik_new_jmle_ncolu1
-```
-
 
 
 ```{r jmle, 2 l.v., K = ncol(u)}
+dir.create("jmle_models/fitting/ncolu", recursive = TRUE, showWarnings = TRUE)
+
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
 set.seed(0)
@@ -232,32 +160,11 @@ loglik_new_jmle_ncolu2
 ```
 
 
-```{r jmle, 1 l.v., K = sqrt(ncol(sim_counts))}
+
+```{r jmle, 2 l.v., K = sqrt(ncol(sim_counts))}
 # Fit jmle with sqrt(ncol(Y))
 dir.create("jmle_models/fitting/sqrt", recursive = TRUE, showWarnings = TRUE)
 
-X = scale(Xenv[, 1:2])
-Y = microbial[, 1:200]
-set.seed(0)
-
-jmle_sqrt1 = jmle(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), K = sqrt(ncol(Y)), N = 1000)
-
-save(jmle_sqrt1, file = file.path("jmle_models/fitting/sqrt", "jmle_sqrt1.RDATA"))
-load("jmle_models/fitting/sqrt/jmle_sqrt1.RDATA")
-
-pred_mu_jmle_sqrt1 = jmle_sqrt1$pred_counts
-time_jmle_sqrt1 = jmle_sqrt1$time
-loglik_new_jmle_sqrt1 = jmle_sqrt1$loglik_new
-
-save(time_jmle_sqrt1, loglik_new_jmle_sqrt1, file = file.path("jmle_models/fitting/sqrt", "jmle_sqrt1_summary.RDATA"))
-load(file.path("jmle_models/fitting/sqrt", "jmle_sqrt1_summary.RDATA"))
-
-time_jmle_sqrt1
-loglik_new_jmle_sqrt1
-```
-
-
-```{r jmle, 2 l.v., K = sqrt(ncol(sim_counts))}
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
 set.seed(0)
@@ -279,36 +186,13 @@ loglik_new_jmle_sqrt2
 ```
 
 
-```{r alt_glmnet - penalty on lambda and u using 1 l.v.}
-library(glmnet)
-# Fit alt_glmnet to B simulated datasets
-dir.create("glmnet_models", showWarnings = TRUE)
-dir.create("glmnet_models/fitting/pen1", showWarnings = TRUE)
-source("alt_glmnet.R")
-
-X = scale(Xenv[, 1:2])
-Y = microbial[, 1:200]
-set.seed(0)
-
-glmnet_1 = alt_glmnet(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200, pen_strength = 1)
-
-save(glmnet_1, file = file.path("glmnet_models/fitting/pen1", "glmnet_1.RDATA"))
-load("glmnet_models/fitting/pen1/glmnet_1.RDATA")
-pred_mu_glmnet1 = glmnet_1$pred_counts
-
-time_glmnet1 = glmnet_1$time
-loglik_new_glmnet1 = glmnet_1$loglik_new
-
-save(time_glmnet1, loglik_new_glmnet1, file = file.path("glmnet_models/fitting/pen1", "glmnet1_summary.RDATA"))
-
-load(file.path("glmnet_models/fitting/pen1", "glmnet1_summary.RDATA"))
-time_glmnet1
-loglik_new_glmnet1
-```
-
-
 
 ```{r alt_glmnet - penalty on lambda and u using 2 l.v.}
+library(glmnet)
+# Fit alt_glmnet to B simulated datasets
+dir.create("glmnet_models/fitting/pen1", recursive = TRUE, showWarnings = TRUE)
+source("alt_glmnet.R")
+
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
 set.seed(0)
@@ -329,32 +213,9 @@ loglik_new_glmnet2
 ```
 
 
-
-```{r alt_glmnet - pen0.1, 1 lv}
+```{r alt_glmnet - pen0.1, 2 lv}
 dir.create("glmnet_models/fitting/pen0.1", recursive = TRUE, showWarnings = TRUE)
 
-X = scale(Xenv[, 1:2])
-Y = microbial[, 1:200]
-set.seed(0)
-
-glmnet_pen0.1_1 = alt_glmnet(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200, pen_strength = 0.1)
-
-save(glmnet_pen0.1_1, file = file.path("glmnet_models/fitting/pen0.1", "glmnet_pen0.1_1.RDATA"))
-load("glmnet_models/fitting/pen0.1/glmnet_pen0.1_1.RDATA")
-
-pred_mu_glmnet_pen0.1_1 = glmnet_pen0.1_1$pred_counts
-time_glmnet_pen0.1_1 = glmnet_pen0.1_1$time
-loglik_new_glmnet_pen0.1_1 = glmnet_pen0.1_1$loglik_new
-
-save(time_glmnet_pen0.1_1, loglik_new_glmnet_pen0.1_1, file = file.path("glmnet_models/fitting/pen0.1", "glmnet_pen0.1_1_summary.RDATA"))
-load(file.path("glmnet_models/fitting/pen0.1", "glmnet_pen0.1_1_summary.RDATA"))
-
-time_glmnet_pen0.1_1
-loglik_new_glmnet_pen0.1_1
-```
-
-
-```{r alt_glmnet - pen0.1, 2 lv}
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
 set.seed(0)
@@ -376,31 +237,9 @@ loglik_new_glmnet_pen0.1_2
 ```
 
 
-```{r alt_glmnet - pen0.01, 1 lv}
+```{r alt_glmnet - pen0.01, 2 lv}
 dir.create("glmnet_models/fitting/pen0.01", recursive = TRUE, showWarnings = TRUE)
 
-X = scale(Xenv[, 1:2])
-Y = microbial[, 1:200]
-set.seed(0)
-
-glmnet_pen0.01_1 = alt_glmnet(sim_counts = as.matrix(Y), X = X, u = as.matrix(rnorm(56, 0, 1)), N = 200, pen_strength = 0.01)
-
-save(glmnet_pen0.01_1, file = file.path("glmnet_models/fitting/pen0.01", "glmnet_pen0.01_1.RDATA"))
-load("glmnet_models/fitting/pen0.01/glmnet_pen0.01_1.RDATA")
-
-pred_mu_glmnet_pen0.01_1 = glmnet_pen0.01_1$pred_counts
-time_glmnet_pen0.01_1 = glmnet_pen0.01_1$time
-loglik_new_glmnet_pen0.01_1 = glmnet_pen0.01_1$loglik_new
-
-save(time_glmnet_pen0.01_1, loglik_new_glmnet_pen0.01_1, file = file.path("glmnet_models/fitting/pen0.01", "glmnet_pen0.01_1_summary.RDATA"))
-load(file.path("glmnet_models/fitting/pen0.01", "glmnet_pen0.01_1_summary.RDATA"))
-
-time_glmnet_pen0.01_1
-loglik_new_glmnet_pen0.01_1
-```
-
-
-```{r alt_glmnet - pen0.01, 2 lv}
 X = scale(Xenv[, 1:2])
 Y = microbial[, 1:200]
 set.seed(0)
@@ -474,7 +313,8 @@ save(identify_ulambda, file = "identify_ulambda.RDATA")
 load("identify_ulambda.RDATA")
 
 model_info = list(
-  gllvm = list(file = "gllvm_models/fitting/gllvm_2.RDATA", object = "gllvm_2"),
+  gllvm_LA = list(file = "gllvm_models/fitting/gllvm_2.RDATA", object = "gllvm_2"),
+  gllvm_VA = list(file = "gllvm_models/fitting/VA/gllvm_VA2.RDATA", object = "gllvm_VA2"),
   glm = list(file = "glm_models/fitting/glm_2.RDATA", object = "glm_2"),
   jmle_ncolcounts = list(file = "jmle_models/fitting/ncolcounts/jmle_2.RDATA", object = "jmle_2"),
   jmle_ncolu = list(file = "jmle_models/fitting/ncolu/jmle_ncolu2.RDATA", object = "jmle_ncolu2"),
@@ -491,7 +331,7 @@ for (method in names(model_info)) {
   load(model_info[[method]]$file)
   fit = get(model_info[[method]]$object)
   
-  if (method == "gllvm") {
+  if (method %in% c("gllvm_LA", "gllvm_VA")) {
     ULambda = identify_ulambda(fit$lvs, fit$params$theta %*% diag(fit$params$sigma.lv))
   } else {
     ULambda = identify_ulambda(fit$u, fit$lambda)
@@ -508,6 +348,8 @@ for (method in names(model_info)) {
 
 
 ```{r Biplot}
+library(stringr)
+
 manual_biplot <- function(u, lambda, y, n_species = 10, site = Xenv$Xenv.Site,
                           main = "") {
   
@@ -549,9 +391,9 @@ manual_biplot <- function(u, lambda, y, n_species = 10, site = Xenv$Xenv.Site,
   )
   
   text(
-    jitter(arrow_scale * lambda[selected_sp, 1], amount = 0.15),
-    jitter(arrow_scale * lambda[selected_sp, 2], amount = 0.15),
-    labels = colnames(y)[selected_sp],
+    jitter(arrow_scale * lambda[selected_sp, 1], amount = 0.2),
+    jitter(arrow_scale * lambda[selected_sp, 2], amount = 0.2),
+    labels = as.numeric(str_extract(colnames(y), "\\d+"))[selected_sp],
     pos = 4,
     cex = 0.7
   )

@@ -92,7 +92,7 @@ m <- gam(f2, data = dat, family = poisson(),  weights = wt, method = "REML")
 
 pred_gam = predict(m, newdata = dat, type = "response")
 loglik_new_gam = sum(dat$occ * log(pred_gam) - dat$wt * pred_gam)
-save(loglik_new_gam, file = "loglik_new_gam.RDATA")
+save(loglik_new_gam, file = "results/loglik_new_gam.RDATA")
 ```
 
 
@@ -124,14 +124,13 @@ intensity_map = function(grid_pred_lonlat, title = ""){
     tm_dots(size = 0.4, col = "black", shape = 4, col_alpha = 0.8) + #, fill.legend = tm_legend_hide()) + # add the points
     tm_compass(type = "8star", position = c("left", "top")) + # add north arrow
     tm_title(title) + # manage the layout
-    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326, # add the grid
-            labels.format = list(big.mark = ",", fun = function(x){paste0(x, "º")})) # add degree symbol
+    tm_grid(lwd = 0.2, labels.inside.frame = FALSE, alpha = 0.4, crs = 4326) # add degree symbol
 }
 
-save(intensity_map, file = "intensity_map.RDATA")
+save(intensity_map, file = "results/intensity_map.RDATA")
 gam_map = intensity_map(grid_pred_lonlat, title = "gam")
 print(gam_map)
-save(gam_map, file = "gam_map.RDATA")
+save(gam_map, file = "results/gam_map.RDATA")
 
 ```
 
@@ -169,7 +168,7 @@ save(m.lgcp_lp, file = "m.lgcp_lp.RDATA")
 load("m.lgcp_lp.RDATA")
 pred_scampr = predict(m.lgcp_lp, newdata = dat, type = "response")
 loglik_new_scampr = sum(dat$occ * log(pred_scampr) - dat$wt * pred_scampr)
-save(loglik_new_scampr, file = "loglik_new_scampr.RDATA")
+save(loglik_new_scampr, file = "results/loglik_new_scampr.RDATA")
 
 ```
 
@@ -186,7 +185,7 @@ grid_pred_lonlat = domain_stars
 load("intensity_map.RDATA")
 scampr_map = intensity_map(grid_pred_lonlat, title = "scampr")
 print(scampr_map)
-save(scampr_map, file = "scampr_map.RDATA")
+save(scampr_map, file = "results/scampr_map.RDATA")
 ```
 
 

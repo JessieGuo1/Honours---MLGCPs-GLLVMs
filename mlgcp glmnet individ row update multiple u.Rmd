@@ -92,8 +92,6 @@ load("Z_star.RDATA")
 set.seed(0)
 ridgePen=1 #penalty strength
 
-### standardise X's up here to variance of one ###
-
 # Initialise shared latent spatial field coefficients (u), one per basis function
 u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(Z_star), 0, 1))
 
@@ -213,13 +211,13 @@ time_i = system.time({for (iter in 1:N){
   if (is.finite(loglik) && abs(loglik_new_mglmnet_individ_row_multi_u - loglik)/ max(1, abs(loglik_new_mglmnet_individ_row_multi_u)) < 1e-6) break
   loglik = loglik_new_mglmnet_individ_row_multi_u}
 })
-#save(loglik_new_mglmnet_individ_row_multi_u, file = "loglik_new_mglmnet_individ_row_multi_u.RDATA")
-save(loglik_new_mglmnet_individ_row_multi_u, file = "loglik_new_mglmnet_individ_row_multi_u_pen1.RDATA")
+#save(loglik_new_mglmnet_individ_row_multi_u, file = "results/loglik_new_mglmnet_individ_row_multi_u.RDATA")
+save(loglik_new_mglmnet_individ_row_multi_u, file = "results/loglik_new_mglmnet_individ_row_multi_u_pen1.RDATA")
 
 time_mglmnet_individ_row_multi_u = as.numeric(time_i[3])
 time_mglmnet_individ_row_multi_u
-#save(time_mglmnet_individ_row_multi_u, file = "time_mglmnet_individ_row_multi_u.RDATA")
-save(time_mglmnet_individ_row_multi_u, file = "time_mglmnet_individ_row_multi_u_pen1.RDATA")
+#save(time_mglmnet_individ_row_multi_u, file = "results/time_mglmnet_individ_row_multi_u.RDATA")
+save(time_mglmnet_individ_row_multi_u, file = "results/time_mglmnet_individ_row_multi_u_pen1.RDATA")
 
 ```
 
@@ -260,8 +258,8 @@ save(m_intensity_map, file = "m_intensity_map.RDATA")
 
 glmnet_m_individ_row_multi_u_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glmnet, Basis Fn Update, 2 l.v.")
 print(glmnet_m_individ_row_multi_u_map)
-#save(glmnet_m_individ_row_multi_u_map, file = "glmnet_m_individ_row_multi_u_map.RDATA")
-save(glmnet_m_individ_row_multi_u_map, file = "glmnet_m_individ_row_multi_u_map_pen1.RDATA")
+#save(glmnet_m_individ_row_multi_u_map, file = "results/glmnet_m_individ_row_multi_u_map.RDATA")
+save(glmnet_m_individ_row_multi_u_map, file = "results/glmnet_m_individ_row_multi_u_map_pen1.RDATA")
 
 ```
 
@@ -272,6 +270,6 @@ ULambda = identify_ulambda(u, lambda)
 
 U_glmnet_individ_row = ULambda$U
 Lambda_glmnet_individ_row = ULambda$Lambda
-save(U_glmnet_individ_row, Lambda_glmnet_individ_row, file = "U_Lambda_glmnet_individ_row.RDATA")
+save(U_glmnet_individ_row, Lambda_glmnet_individ_row, file = "results/U_Lambda_glmnet_individ_row.RDATA")
 ```
 

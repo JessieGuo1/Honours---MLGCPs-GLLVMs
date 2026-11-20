@@ -79,11 +79,11 @@ mB1
 pred_mlgcp = predict(mB1, type = "response", re.form = NULL)
 
 loglik_new_mlgcp = sum(dat$occ * log(pred_mlgcp) - dat$wt * pred_mlgcp)
-save(loglik_new_mlgcp, file = "loglik_new_mlgcp.RDATA")
+save(loglik_new_mlgcp, file = "results/loglik_new_mlgcp.RDATA")
 
 time_mlgcp = as.numeric(time_i[3])
 time_mlgcp
-save(time_mlgcp, file = "time_mlgcp.RDATA")
+save(time_mlgcp, file = "results/time_mlgcp.RDATA")
 
 
 #Using tmap
@@ -198,6 +198,6 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 mlgcp_map = m_intensity_map(grid_pred_lonlat, model_label = "mlgcp, 1 l.v.")
 print(mlgcp_map)
-save(mlgcp_map, file = "mlgcp_map.RDATA")
-load("mlgcp_map.RDATA")
+save(mlgcp_map, file = "results/mlgcp_map.RDATA")
+load("results/mlgcp_map.RDATA")
 print(mlgcp_map)

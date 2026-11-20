@@ -3,33 +3,33 @@ title: "mlgcp - results"
 output: html_document
 date: "2026-11-07"
 ---
-```{r}
+```{r figures in thesis}
 #graphics.off()
 tmap_mode("plot")
 
-load("glm_m_map.RDATA")
-load("glm_m_oneq_map.RDATA")
-load("glm_m_individ_row_map.RDATA")
+load("results/glm_m_map.RDATA")
+load("results/glm_m_oneq_map.RDATA")
+load("results/glm_m_individ_row_map.RDATA")
 
-load("glm_m_multi_u_map.RDATA")
-load("glm_m_oneq_map_multi_u.RDATA")
-load("glm_m_individ_row_multi_u_map.RDATA")
+load("results/glm_m_multi_u_map.RDATA")
+load("results/glm_m_oneq_map_multi_u.RDATA")
+load("results/glm_m_individ_row_multi_u_map.RDATA")
 
-load("glmnet_m_map.RDATA")
-load("glmnet_m_oneq_map.RDATA")
-load("glmnet_m_individ_row_map.RDATA")
+load("results/glmnet_m_map.RDATA")
+load("results/glmnet_m_oneq_map.RDATA")
+load("results/glmnet_m_individ_row_map.RDATA")
 
-load("glmnet_m_multi_u_map.RDATA")
-load("glmnet_m_oneq_multi_u_map.RDATA")
-load("glmnet_m_individ_row_multi_u_map.RDATA")
+load("results/glmnet_m_multi_u_map.RDATA")
+load("results/glmnet_m_oneq_multi_u_map.RDATA")
+load("results/glmnet_m_individ_row_multi_u_map.RDATA")
 
-load("mlgcp_map.RDATA")
-load("mlgcp_map_multi_u.RDATA")
+load("results/mlgcp_map.RDATA")
+load("results/mlgcp_map_multi_u.RDATA")
 
-load("gam_map.RDATA")
-load("scampr_map.RDATA")
-load("glm_map.RDATA")
-load("glmnet_map.RDATA")
+load("results/gam_map.RDATA")
+load("results/scampr_map.RDATA")
+load("results/glm_map.RDATA")
+load("results/glmnet_map.RDATA")
 
 map_univariate = tmap_arrange(
   gam_map,
@@ -94,6 +94,13 @@ map_multivariate_red_2 = tmap_arrange(
 tmap_save(map_multivariate_red_2, "figures/map_multivariate_red_2.png", width = 16, height = 4, dpi = 300)
 #######################################################################
 #Penalty 1 glmnet
+load("results/glmnet_m_pen1_map.RDATA")
+load("results/glmnet_m_oneq_pen1_map.RDATA")
+load("results/glmnet_m_individ_row_pen1_map.RDATA")
+
+load("results/glmnet_m_multi_u_pen1_map.RDATA")
+load("results/glmnet_m_oneq_multi_u_pen1_map.RDATA")
+load("results/glmnet_m_individ_row_multi_u_pen1_map.RDATA")
 
 map_multivariate_glmnet_pen1 = tmap_arrange(
   glmnet_m_map,
@@ -106,23 +113,25 @@ map_multivariate_glmnet_pen1 = tmap_arrange(
 )
 tmap_save(map_multivariate_glmnet_pen1, "figures/map_multivariate_glmnet_pen1.png", width = 16, height = 8, dpi = 300)
 
+```
 
 
-load("time_mglm.RDATA")
-load("time_mglm_oneq.RDATA")
-load("time_mglm_individ_row.RDATA")
-load("time_mglmnet.RDATA")
-load("time_mglmnet_oneq.RDATA")
-load("time_mglmnet_individ_row.RDATA")
-load("time_mlgcp.RDATA")
+```{r time, loglik in thesis}
+load("results/time_mglm.RDATA")
+load("results/time_mglm_oneq.RDATA")
+load("results/time_mglm_individ_row.RDATA")
+load("results/time_mglmnet.RDATA")
+load("results/time_mglmnet_oneq.RDATA")
+load("results/time_mglmnet_individ_row.RDATA")
+load("results/time_mlgcp.RDATA")
 
-load("time_mglm_multi_u.RDATA")
-load("time_mglm_oneq_multi_u.RDATA")
-load("time_mglm_individ_row_multi_u.RDATA")
-load("time_mglmnet_multi_u.RDATA")
-load("time_mglmnet_oneq_multi_u.RDATA")
-load("time_mglmnet_individ_row_multi_u.RDATA")
-load("time_mlgcp_multi_u.RDATA")
+load("results/time_mglm_multi_u.RDATA")
+load("results/time_mglm_oneq_multi_u.RDATA")
+load("results/time_mglm_individ_row_multi_u.RDATA")
+load("results/time_mglmnet_multi_u.RDATA")
+load("results/time_mglmnet_oneq_multi_u.RDATA")
+load("results/time_mglmnet_individ_row_multi_u.RDATA")
+load("results/time_mlgcp_multi_u.RDATA")
 
 c(time_mglm, time_mglm_oneq, time_mglm_individ_row, time_mglmnet, time_mglmnet_oneq, time_mglmnet_individ_row, time_mlgcp)
 cat(
@@ -146,26 +155,26 @@ cat(
   "mlgcp_multi_u:", time_mlgcp_multi_u, "\n"
 )
 
-load("loglik_new_gam.RDATA")
-load("loglik_new_scampr.RDATA")
-load("loglik_new_glm.RDATA")
-load("loglik_new_glmnet.RDATA")
+load("results/loglik_new_gam.RDATA")
+load("results/loglik_new_scampr.RDATA")
+load("results/loglik_new_glm.RDATA")
+load("results/loglik_new_glmnet.RDATA")
 
-load("loglik_new_mglm.RDATA")
-load("loglik_new_mglm_oneq.RDATA")
-load("loglik_new_mglm_individ_row.RDATA")
-load("loglik_new_mglmnet.RDATA")
-load("loglik_new_mglmnet_oneq.RDATA")
-load("loglik_new_mglmnet_individ_row.RDATA")
-load("loglik_new_mlgcp.RDATA")
+load("results/loglik_new_mglm.RDATA")
+load("results/loglik_new_mglm_oneq.RDATA")
+load("results/loglik_new_mglm_individ_row.RDATA")
+load("results/loglik_new_mglmnet.RDATA")
+load("results/loglik_new_mglmnet_oneq.RDATA")
+load("results/loglik_new_mglmnet_individ_row.RDATA")
+load("results/loglik_new_mlgcp.RDATA")
 
-load("loglik_new_mglm_multi_u.RDATA")
-load("loglik_new_mglm_oneq_multi_u.RDATA")
-load("loglik_new_mglm_individ_row_multi_u.RDATA")
-load("loglik_new_mglmnet_multi_u.RDATA")
-load("loglik_new_mglmnet_oneq_multi_u.RDATA")
-load("loglik_new_mglmnet_individ_row_multi_u.RDATA")
-load("loglik_new_mlgcp_multi_u.RDATA")
+load("results/loglik_new_mglm_multi_u.RDATA")
+load("results/loglik_new_mglm_oneq_multi_u.RDATA")
+load("results/loglik_new_mglm_individ_row_multi_u.RDATA")
+load("results/loglik_new_mglmnet_multi_u.RDATA")
+load("results/loglik_new_mglmnet_oneq_multi_u.RDATA")
+load("results/loglik_new_mglmnet_individ_row_multi_u.RDATA")
+load("results/loglik_new_mlgcp_multi_u.RDATA")
 
 c(loglik_new_mglm, loglik_new_mglm_oneq, loglik_new_mglm_individ_row, loglik_new_mglmnet, loglik_new_mglmnet_oneq, loglik_new_mglmnet_individ_row, loglik_new_mlgcp)
 cat(
@@ -191,23 +200,21 @@ cat(
 
 ##################################################################################
 #Penalty 1 glmnet
-load("loglik_new_mglmnet.RDATA")
-load("loglik_new_mglmnet_oneq.RDATA")
-load("loglik_new_mglmnet_individ_row.RDATA")
-load("time_mglmnet_multi_u.RDATA")
-load("time_mglmnet_oneq_multi_u.RDATA")
-load("time_mglmnet_individ_row_multi_u.RDATA")
+load("results/loglik_new_mglmnet_pen1.RDATA")
+load("results/loglik_new_mglmnet_oneq_pen1.RDATA")
+load("results/loglik_new_mglmnet_individ_row_pen1.RDATA")
+load("results/time_mglmnet_multi_u_pen1.RDATA")
+load("results/time_mglmnet_oneq_multi_u_pen1.RDATA")
+load("results/time_mglmnet_individ_row_multi_u_pen1.RDATA")
 c(time_mglmnet, time_mglmnet_oneq, time_mglmnet_individ_row, time_mglmnet_multi_u, time_mglmnet_oneq_multi_u, time_mglmnet_individ_row_multi_u)
 
-load("loglik_new_mglmnet.RDATA")
-load("loglik_new_mglmnet_oneq.RDATA")
-load("loglik_new_mglmnet_individ_row.RDATA")
-load("loglik_new_mglmnet_multi_u.RDATA")
-load("loglik_new_mglmnet_oneq_multi_u.RDATA")
-load("loglik_new_mglmnet_individ_row_multi_u.RDATA")
+load("results/loglik_new_mglmnet_pen1.RDATA")
+load("results/loglik_new_mglmnet_oneq_pen1.RDATA")
+load("results/loglik_new_mglmnet_individ_row_pen1.RDATA")
+load("results/loglik_new_mglmnet_multi_u_pen1.RDATA")
+load("results/loglik_new_mglmnet_oneq_multi_u_pen1.RDATA")
+load("results/loglik_new_mglmnet_individ_row_multi_u_pen1.RDATA")
 c(loglik_new_mglmnet, loglik_new_mglmnet_oneq, loglik_new_mglmnet_individ_row, loglik_new_mglmnet_multi_u, loglik_new_mglmnet_oneq_multi_u, loglik_new_mglmnet_individ_row_multi_u)
-
-
 
 ```
 
@@ -228,7 +235,6 @@ for (i in 1:nrow(domain)) {
   domain$xycol[i] <- colorRampPalette(c(domain$xcol[i], domain$ycol[i]))(3)[2]
 }
 
-
 png(filename = "figures/domain_color_guide.png", width = 6 , height = 8, units = "in", res = 300)
 plot(vec2im(domain$xycol, domain$x, domain$y), valuesAreColors = T, box = F, main = "")
 mtext("Biplot with Domain Color Guide", side = 3, line = 1.5, adj = 0, xpd = T, cex = 1.2)
@@ -236,7 +242,6 @@ par(xpd = T)
 points(mB2$basis.functions$x, mB2$basis.functions$y, bg = mB2$basis.functions$xycol, pch = 21, cex = 1.2)
 legend("bottomright", legend = c("Basis function nodes"), pch = 1, bty = "n", xpd = T)
 dev.off()
-
 
 # function to add cols to the basis function nodes
 get_bfs_cols <- function(x) {
@@ -247,8 +252,6 @@ get_bfs_cols <- function(x) {
   nn.bfs <- nncross(bfs.pp, domain.pp, what = "which")
   domain$xycol[nn.bfs]
 }
-
-
 
 bfs_cols_mlgcp = get_bfs_cols(mB2)
 
@@ -270,7 +273,6 @@ bfs_cols_all = list(
 
 load("dat_rename.RDATA")
 species = unique(dat_rename$spid)
-
 
 biplot_mlgcp <- function(u, lambda, species, bfs_cols, main = "") {
   
@@ -352,7 +354,6 @@ for (method in model_info) {
   biplot_mlgcp(U_all[[method]], Lambda_all[[method]], species, bfs_cols = bfs_cols_all[[method]], main = paste0("Biplot for ", method, " fit"))
   dev.off()
 }
-
 
 ```
 

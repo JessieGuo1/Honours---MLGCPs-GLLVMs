@@ -106,8 +106,6 @@ Z_row = rbind(Z_pres, Z_quad_rep)
 set.seed(0)
 ridgePen=1 #penalty strength
 
-### standardise X's up here to variance of one ###
-
 # Initialise shared latent spatial field coefficients (u), one per basis function
 u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(Z_star), 0, 1))
 
@@ -225,13 +223,13 @@ time_i = system.time({for (iter in 1:N){
   loglik = loglik_new_mglmnet_oneq_multi_u}
 })
 
-#save(loglik_new_mglmnet_oneq_multi_u, file = "loglik_new_mglmnet_oneq_multi_u.RDATA")
-save(loglik_new_mglmnet_oneq_multi_u, file = "loglik_new_mglmnet_oneq_multi_u_pen1.RDATA")
+#save(loglik_new_mglmnet_oneq_multi_u, file = "results/loglik_new_mglmnet_oneq_multi_u.RDATA")
+save(loglik_new_mglmnet_oneq_multi_u, file = "results/loglik_new_mglmnet_oneq_multi_u_pen1.RDATA")
 
 time_mglmnet_oneq_multi_u = as.numeric(time_i[3])
 time_mglmnet_oneq_multi_u
-#save(time_mglmnet_oneq_multi_u, file = "time_mglmnet_oneq_multi_u.RDATA")
-save(time_mglmnet_oneq_multi_u, file = "time_mglmnet_oneq_multi_u_pen1.RDATA")
+#save(time_mglmnet_oneq_multi_u, file = "results/time_mglmnet_oneq_multi_u.RDATA")
+save(time_mglmnet_oneq_multi_u, file = "results/time_mglmnet_oneq_multi_u_pen1.RDATA")
 
 ```
 
@@ -272,8 +270,8 @@ tmap_mode("plot")
 load("m_intensity_map.RDATA")
 glmnet_m_oneq_multi_u_map = m_intensity_map(grid_pred_lonlat, model_label = "alt_glmnet, One Quad. Dataset, 2 l.v.")
 print(glmnet_m_oneq_multi_u_map)
-#save(glmnet_m_oneq_multi_u_map, file = "glmnet_m_oneq_multi_u_map.RDATA")
-save(glmnet_m_oneq_multi_u_map, file = "glmnet_m_oneq_multi_u_pen1_map.RDATA")
+#save(glmnet_m_oneq_multi_u_map, file = "results/glmnet_m_oneq_multi_u_map.RDATA")
+save(glmnet_m_oneq_multi_u_map, file = "results/glmnet_m_oneq_multi_u_pen1_map.RDATA")
 
 ```
 
@@ -284,5 +282,5 @@ ULambda = identify_ulambda(u, lambda)
 
 U_glmnet_oneq = ULambda$U
 Lambda_glmnet_oneq = ULambda$Lambda
-save(U_glmnet_oneq, Lambda_glmnet_oneq, file = "U_Lambda_glmnet_oneq.RDATA")
+save(U_glmnet_oneq, Lambda_glmnet_oneq, file = "results/U_Lambda_glmnet_oneq.RDATA")
 ```
