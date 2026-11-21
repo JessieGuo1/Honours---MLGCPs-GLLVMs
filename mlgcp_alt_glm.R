@@ -1,4 +1,4 @@
-mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts, 
+mlgcp_alt_glm = function(u, data, Z, X, N, max_it, occ, wts, 
                       basis.function.update = FALSE, 
                       one.quad = FALSE, pres = NULL, quad = NULL, X_pres = NULL, X_quad = NULL, Z_pres = NULL, Z_quad = NULL, red.data = NULL){
 
@@ -56,7 +56,7 @@ mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts,
         # Species-specific design matrix
         X_i = rbind(X_pres_Zu[idx, ], X_quad_Zu)
         # Species-specific responses
-        y_i = c((red.data$occ/red.data$wt)[idx], rep(0, nrow(quad)))
+        occ_i = c(red.data$occ[idx], rep(0, nrow(quad)))
         # Species-specific weights
         w_i = c(red.data$wt[idx], quad$wt)
       }
@@ -64,7 +64,7 @@ mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts,
       else {
         # Species-specific design matrix
         X_i = X_Zu[idx, ]
-        y_i = Y[idx]
+        occ_i = occ[idx]
         w_i = wts[idx]
       }
       
@@ -75,7 +75,7 @@ mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts,
       }
       
       # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
-      glm1 = glm.fit(y = y_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, start = start_iter, control = glm.control(maxit = max_it))
+      glm1 = glm.fit(y = occ_i/w_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, start = start_iter, control = glm.control(maxit = max_it))
       
       # Store this species' intercept + beta + lambda (1 loading)
       beta_lambda[j, ] = t(c(glm1$coefficients)) 
@@ -87,7 +87,7 @@ mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts,
     lambda = as.matrix(beta_lambda[, (ncol(X) + 1):ncol(beta_lambda)]) 
     
     # Expand loadings to observation rows
-    lambda_rep = lambda[species_idx_row, , drop = TRUE]
+    lambda_rep = lambda[species_idx_row, , drop = FALSE]
     
     # Fixed-effect linear predictor
     offset = rowSums(X * beta[species_idx_row, , drop = FALSE])
@@ -109,7 +109,7 @@ mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts,
           u[i, ]} else {
             NULL
           }        
-        glm1 = glm.fit(x = Zl_joint[, idx, drop = FALSE], y = Y, intercept = FALSE, family=poisson(link='log'), weights = wts, offset = offset_i, start = start_iter_u, control = glm.control(maxit = max_it)) 
+        glm1 = glm.fit(x = Zl_joint[, idx, drop = FALSE], y = occ/wts, intercept = FALSE, family=poisson(link='log'), weights = wts, offset = as.numeric(offset_i), start = start_iter_u, control = glm.control(maxit = max_it)) 
         
         # Update shared-field coefficients
         u[i, ] = glm1$coefficients
@@ -125,7 +125,7 @@ mlgcp_alt_glm = function(u, data, Z, X, N, max_it, Y, wts,
           NULL
         }
       # Joint update for u
-      glm1 = glm.fit(x = Zl_joint, y = Y, intercept = FALSE, family=poisson(link='log'), weights = wts, offset = offset, start = start_iter_u, control = glm.control(maxit = max_it)) 
+      glm1 = glm.fit(x = Zl_joint, y = occ/wts, intercept = FALSE, family=poisson(link='log'), weights = wts, offset = offset, start = start_iter_u, control = glm.control(maxit = max_it)) 
       
       # Update shared-field coefficients
       u <- matrix(coef(glm1), nrow = nrow(u), ncol = ncol(u))
