@@ -1,0 +1,246 @@
+---
+title: "mlgcp glm one quad multiple u"
+output: html_document
+date: "2026-11-02"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r Data Preprocessing}
+library(disdat)
+library(mgcv)
+library(sf)
+library(spatstat)
+library(fields)
+library(tmap)
+library(grid)
+library(units)
+library(stringr)
+library(dplyr)
+library(glmnet)
+library(scampr)
+#install.packages("glmmTMB_1.1.9-9000.tar.gz",  repos = NULL, type = "source")
+library(glmmTMB)
+
+# get the data
+source("get_and_format_flora_data.R")
+rm(dat_pa)
+
+# get a vector of the factor terms
+facts <- c("disturb", "soilfert", "vegsis")
+
+# load the species information
+load("flora_species.RDATA")
+
+# get the groups to which the flora species belongs to subset the data
+flora_groups <- unique(sp.info$group)
+
+# subset the presence-only data (in the case we are using restricted species)
+pres <- pres[pres$group %in% flora_groups, ]
+
+# want to use species with at least 10 presences
+pres <- pres[pres$spid %in% names(table(pres$spid))[table(pres$spid) >= 10], ]
+
+# get the species
+species <- unique(pres$spid)
+
+# assign some numbers
+m <- length(species) # responses
+q <- nrow(quad) # quadrature points
+
+# add in the quadrature for each species (replicates of the supplied background points)
+quad$spid <- rep(NA, q) #label each replicate block with its species id
+dat <- rbind(pres, quad)
+n <- nrow(dat)
+
+quad_rep <- quad[rep(seq_len(q), m), ]
+quad_rep$spid <- rep(species, each = q) # assign the species id's
+dat_rep = rbind(pres, quad_rep)
+
+# set the coordinates to x and y so we can just use default labels
+dat$lon <- dat$x; dat$lat <- dat$y; dat$x <- dat$xm; dat$y <- dat$ym; dat$xm <- NULL; dat$ym <- NULL
+dat_rep$lon <- dat_rep$x; dat_rep$lat <- dat_rep$y; dat_rep$x <- dat_rep$xm; dat_rep$y <- dat_rep$ym; dat_rep$xm <- NULL; dat_rep$ym <- NULL
+
+load("domain.RDATA")
+domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
+
+gc()
+```
+
+
+
+```{r Build spatial basis functions}
+bfs <- make_basis(k = 50, domain, from.package = "scampr")
+
+# need to prune in the case of scampr bfs
+if (is(bfs, "scampr.bf")) {
+  tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")])) # via the data?
+#  tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
+  bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
+  bfs <- bfs[bf.check != 0, ]
+  rm(tmp, bf.check)
+}
+
+#evaluate basis functions at every data point
+Z_star = bf_matrix(bfs, dat[, c("x", "y")])
+#Z_star = Z_star/max(apply(Z_star,2,sd)) #some standardisation needed for ridge fits
+
+pres_rows = seq_len(nrow(pres))
+quad_rows = nrow(pres) + seq_len(nrow(quad))
+                 
+Z_pres = Z_star[pres_rows, , drop = FALSE]
+Z_quad = Z_star[quad_rows, , drop = FALSE]
+
+n_species = length(species)
+Z_quad_rep = Z_quad[rep(seq_len(nrow(Z_quad)), n_species), , drop = FALSE]
+Z_row = rbind(Z_pres, Z_quad_rep)
+```
+
+
+
+```{r Fitting - alternating column/row updates}
+set.seed(0)
+#initialise shared latent spatial field coefficients (u), one per basis function
+u = cbind(rnorm(ncol(Z_star), 0, 1), rnorm(ncol(Z_star), 0, 1))
+
+# Rename spid
+dat_rename = dat_rep %>% 
+  mutate(spid = as.numeric(str_extract(dat_rep$spid, "\\d+")))
+
+pres_spid = as.numeric(str_extract(pres$spid, "\\d+"))
+
+attach(dat_rename)
+Z_pres_u = Z_pres %*% u 
+Z_quad_u = Z_quad %*% u 
+
+chosen_spid = unique(pres_spid)
+
+X_full = cbind(1, mi, tempann)
+X_pres_full = cbind(1, pres$mi, pres$tempann)
+X_quad_full = cbind(1, quad$mi, quad$tempann)
+
+beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Z_pres_u) + ncol(X_pres_full))
+
+#rows_by_species = split(seq_len(nrow(dat_rename)), spid)
+rows_by_species = split(seq_len(nrow(pres)), pres_spid)
+species_idx_pres = match(pres_spid, chosen_spid)
+species_idx_row = match(spid, chosen_spid)
+
+N = 1000
+loglik = -Inf
+max_it = 3
+
+time_i = system.time({for (iter in 1:N){
+  X_pres_Zu = cbind(X_pres_full, Z_pres_u)
+  X_quad_Zu = cbind(X_quad_full, Z_quad_u)
+
+  for (j in seq_along(chosen_spid)){
+    i = chosen_spid[j]
+    idx = rows_by_species[[as.character(i)]]
+    
+    X_i = rbind(X_pres_Zu[idx, ], X_quad_Zu)
+    
+    y_i = c(dat$occ[idx]/dat$wt[idx], rep(0, nrow(quad)))
+
+    w_i = c(dat$wt[idx], quad$wt)
+
+    start_iter = if (all(is.finite(beta_lambda[j, ]))) {
+      beta_lambda[j, ]
+      } else {
+        NULL
+        }
+
+    glm1 = glm.fit(y = y_i, x = X_i, family = poisson(link = 'log'), weights = w_i, intercept = TRUE, start = start_iter, control = glm.control(maxit = max_it))
+    
+    # store this species' intercept + beta + lambda (1 loading)
+    beta_lambda[j, ] = t(c(glm1$coefficients))  
+  }
+
+  #split fitted coefficients into fixed effects (beta) and basis-function loadings (lambda)
+  beta_lambda
+  beta = beta_lambda[, 1:ncol(X_pres_full)] 
+  lambda = as.matrix(beta_lambda[, (ncol(X_pres_full) + 1):ncol(beta_lambda)]) 
+  
+  lambda_rep = lambda[species_idx_row, , drop = TRUE]
+
+  offset = rowSums(X_full * beta[species_idx_row, , drop = FALSE])
+
+  Zl_joint = cbind(Z_row * lambda_rep[, 1], Z_row * lambda_rep[, 2])
+
+  start_iter_u = if (all(is.finite(u))) {
+    as.vector(u)} else {
+      NULL
+      }
+
+  glm1 = glm.fit(x = Zl_joint, y = occ/wt, intercept = FALSE, family=poisson(link='log'), weights = wt, offset = offset, start = start_iter_u, control = glm.control(maxit = max_it))
+  
+  u <- matrix(coef(glm1), nrow = nrow(u), ncol = ncol(u))
+  print(u)
+  
+  # Rebuild Zu with updated u, for next iteration's column update
+  Z_pres_u = Z_pres %*% u 
+  Z_quad_u = Z_quad %*% u
+
+  Zu = Z_row %*% u
+  eta = offset + rowSums(Zu * lambda_rep)
+#  eta = offset + (Z_row * lambda_rep[, 1]) %*% u[, 1] + (Z_row * lambda_rep [, 2]) %*% u[, 2]
+
+  mu = exp(eta)
+  pred_mglm_oneq_multi_u = mu
+  
+  #weighted Poisson-process log-likelihood (DWPR/Berman-Turner approximation)
+  loglik_new_mglm_oneq_multi_u = sum(occ * eta - wt * exp(eta))
+  cat("iter", iter, "loglik:", loglik_new_mglm_oneq_multi_u, "\n")
+  
+  #stop once relative change in log-likelihood is small
+  if (is.finite(loglik) && abs(loglik_new_mglm_oneq_multi_u - loglik)/ max(1, abs(loglik_new_mglm_oneq_multi_u)) < 1e-6) break
+  loglik = loglik_new_mglm_oneq_multi_u}
+})
+save(loglik_new_mglm_oneq_multi_u, file = "results/loglik_new_mglm_oneq_multi_u.RDATA")
+
+time_mglm_oneq_multi_u = as.numeric(time_i[3])
+time_mglm_oneq_multi_u
+save(time_mglm_oneq_multi_u, file = "results/time_mglm_oneq_multi_u.RDATA")
+```
+
+
+```{r Intensity map for a chosen species}
+X_domain = cbind(1, domain$mi, domain$tempann)
+Z_domain_star = bf_matrix(bfs, domain[, c("x", "y")])
+
+Zu_domain = Z_domain_star %*% u
+
+target_species_id <- 19
+j = match(target_species_id, chosen_spid)
+sp_fld_glmnet = X_domain %*% beta[j, ] + Zu_domain%*%lambda[j, ]
+
+#sp_fld_glmnet = X_domain %*% beta[j, ] + (Z_domain_star * lambda[j, 1]) %*% u[, 1] + (Z_domain_star * lambda[j, 2]) %*% u[, 2] 
+
+domain$log_intensity = as.numeric(sp_fld_glmnet[, 1])
+
+library(stars)
+domain_stars = st_as_stars(domain[, c("lon", "lat", "log_intensity")], dims = c("lon", "lat"))
+grid_pred_lonlat = domain_stars
+
+species_points = dat_rename[dat_rename$spid == target_species_id & dat_rename$occ == 1, ]
+species_points_lonlat = st_as_sf(species_points, coords = c("lon", "lat"), crs = 4326)
+
+border_lonlat = disBorder("NSW")
+
+tmap_mode("plot")
+
+load("m_intensity_map.RDATA")
+glm_m_oneq_map_multi_u = m_intensity_map(grid_pred_lonlat, model_label = "alt_glm, One Quad. Dataset, 2 l.v.")
+print(glm_m_oneq_map_multi_u)
+save(glm_m_oneq_map_multi_u, file = "results/glm_m_oneq_map_multi_u.RDATA")
+```
+
+
+```{r}
+load("identify_ulambda.RDATA")
+ULambda = identify_ulambda(u, lambda)
+
+U_glm_oneq = ULambda$U
+Lambda_glm_oneq = ULambda$Lambda
+save(U_glm_oneq, Lambda_glm_oneq, file = "results/U_Lambda_glm_oneq.RDATA")
+```

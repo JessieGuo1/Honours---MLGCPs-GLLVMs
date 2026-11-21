@@ -1,3 +1,5 @@
+
+```{r data preprocessing}
 # set approximate number of basis function nodes to use
 basis.dim = 50
 
@@ -39,9 +41,11 @@ rm(tmp)
 # set the coordinates to x and y so we can just use default labels
 dat$lon <- dat$x; dat$lat <- dat$y; dat$x <- dat$xm; dat$y <- dat$ym; dat$xm <- NULL; dat$ym <- NULL
 domain$lon <- domain$x; domain$lat <- domain$y; domain$x <- domain$xm; domain$y <- domain$ym; domain$xm <- NULL; domain$ym <- NULL
+```
 
+
+```{r basis functions}
 # set the basis functions
-
 bfs <- make_basis(k = basis.dim, domain, from.package = "scampr")
 
 # need to prune in the case of scampr bfs
@@ -54,8 +58,10 @@ if (is(bfs, "scampr.bf")) {
 }
 
 gc()
+```
 
 
+```{r model fitting}
 ################################################################################
 # Fit the model including linear env terms #####################################
 ################################################################################
@@ -83,7 +89,10 @@ save(loglik_new_mlgcp_multi_u, file = "results/loglik_new_mlgcp_multi_u.RDATA")
 time_mlgcp_multi_u = as.numeric(time_i[3])
 time_mlgcp_multi_u
 save(time_mlgcp_multi_u, file = "results/time_mlgcp_multi_u.RDATA")
+```
 
+
+```{r intensity map}
 #Using tmap
 target_species_id <- "nsw19"
 Lambda = get_loadings(mB2)
@@ -197,8 +206,10 @@ load("m_intensity_map.RDATA")
 mlgcp_map_multi_u = m_intensity_map(grid_pred_lonlat, model_label = "mlgcp, 2 l.v.")
 print(mlgcp_map_multi_u)
 save(mlgcp_map_multi_u, file = "results/mlgcp_map_multi_u.RDATA")
+```
 
 
+```{r u, lambda}
 u = get_bfs_coeff(mB2)
 lambda = get_loadings(mB2)
 
@@ -207,3 +218,5 @@ ULambda = identify_ulambda(u, lambda)
 U_mlgcp = ULambda$U
 Lambda_mlgcp = ULambda$Lambda
 save(U_mlgcp, Lambda_mlgcp, file = "results/U_Lambda_mlgcp.RDATA")
+```
+
