@@ -108,7 +108,7 @@ X_full = cbind(1, mi, tempann)
 beta_lambda = matrix(NA,  nrow = n_species, ncol = ncol(Zu) + ncol(X_full))
 
 rows_by_species = split(seq_len(nrow(dat_rename)), spid)
-species_idx_row = match(spid, chosen_spid) #543323 x 1
+species_idx_row = match(spid, chosen_spid)
 
 N = 1000 
 loglik = -Inf
