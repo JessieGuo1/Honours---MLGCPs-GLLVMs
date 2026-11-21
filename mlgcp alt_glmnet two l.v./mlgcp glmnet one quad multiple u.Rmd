@@ -75,7 +75,7 @@ bfs <- make_basis(k = 50, domain, from.package = "scampr")
 
 # Pruning basis functions with zero support
 if (is(bfs, "scampr.bf")) {
-  tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")])) # via the data?
+  tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")]))
 #  tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
   bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
   bfs <- bfs[bf.check != 0, ]
@@ -121,8 +121,6 @@ attach(dat_rename)
 Z_pres_u = Z_pres %*% u 
 Z_quad_u = Z_quad %*% u 
 
-chosen_spid = unique(pres_spid)
-
 # Fixed-effect design matrix
 X_full = cbind(1, mi, tempann) 
 X_pres_full = cbind(1, pres$mi, pres$tempann)
@@ -136,6 +134,7 @@ beta_lambda = matrix(0,  nrow = n_species, ncol = ncol(Z_pres_u) + ncol(X_pres_f
 rows_by_species = split(seq_len(nrow(pres)), spid)
 
 # Species index for each row
+chosen_spid = unique(pres_spid)
 species_idx_pres = match(pres_spid, chosen_spid)
 species_idx_row = match(spid, chosen_spid)
 
@@ -171,7 +170,7 @@ time_i = system.time({for (iter in 1:N){
     # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
     glmnet1 = glmnet:::glmnet.fit(y = y_i, x = as.matrix(X_i), family = poisson(link = 'log'), weights = w_i, intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
     
-    # Store this species' intercept + beta + lambda (1 loading)
+    # Store this species' intercept + beta + lambda
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
 
     # Update warm start
@@ -276,7 +275,7 @@ save(glmnet_m_oneq_multi_u_map, file = "results/glmnet_m_oneq_multi_u_pen1_map.R
 ```
 
 
-```{r}
+```{r u, lambda}
 load("identify_ulambda.RDATA")
 ULambda = identify_ulambda(u, lambda)
 

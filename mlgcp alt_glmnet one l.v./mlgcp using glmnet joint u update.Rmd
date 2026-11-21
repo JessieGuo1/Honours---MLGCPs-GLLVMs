@@ -71,7 +71,7 @@ bfs <- make_basis(k = 50, domain, from.package = "scampr")
 
 # Pruning basis functions with zero support
 if (is(bfs, "scampr.bf")) {
-  tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")])) # via the data?
+  tmp <- bf_matrix(bfs, rbind(pres[,c("xm", "ym")], quad[,c("xm", "ym")]))
   # tmp <- bf_matrix(bfs, pres[,c("xm", "ym")]) # via the data?
   bf.check <- apply(tmp, 2, function(x){sum(x > 0)})
   bfs <- bfs[bf.check != 0, ]
@@ -146,7 +146,7 @@ time_i = system.time({for (iter in 1:N){
     # Weighted Poisson ridge regression - DWPR response (pt/wt), weight = wt
     glmnet1 = glmnet:::glmnet.fit(y = occ[idx]/wt[idx], x = as.matrix(X_i), family = poisson(link = 'log'), weights = wt[idx], intercept = TRUE, warm = warm_start[[j]], alpha = 0, lambda = ridgePen, penalty.factor = penalty_factor, control = glmnet.control(mxitnr = max_it))
     
-    # Store this species' intercept + beta + lambda (1 loading)
+    # Store this species' intercept + beta + lambda
     beta_lambda[j, ] = t(c(glmnet1$a0, as.numeric(glmnet1$beta))) 
     
     # Update warm start
